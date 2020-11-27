@@ -20,20 +20,23 @@ static int start_listen(const char *port);
  * Schedules itself recursively on success.
  */
 struct accept_task {
-    struct dltask dltask;
+    struct dltask task;
     int socketfd;
 };
 static void accept_async(struct dltask *);
 
 /*
- * connection_async reads payload from client, performs zero validation,
- * then returns an HTML body.
+ * read_async reads payload from client, performs zero validation,
+ * and queues a write_async to showcast dlcontinuation().
+ *
+ * Out of sheer laziness, define a generic task for both read and write.
  */
-struct connection_task {
-    struct dltask dltask;
+struct rw_task {
+    struct dltask task;
     int clientfd;
 };
-static void connection_async(struct dltask *);
+static void read_async(struct dltask *);
+static void write_async(struct dltask *);
 
 int
 main(int argc, char** argv)
@@ -45,13 +48,13 @@ main(int argc, char** argv)
      * will return when our scheduler is terminated.
      */
     struct accept_task accept_task = {
-        .dltask = {
+        .task = {
             .fn = accept_async,
             .next = NULL
         },
         .socketfd = socketfd
     };
-    int result = dlmain(&accept_task.dltask, NULL, NULL);
+    int result = dlmain(&accept_task.task, NULL, NULL);
     if (result) perror("Error in dlmain");
 
     close(socketfd);
@@ -118,21 +121,21 @@ accept_async(struct dltask *xargs)
         goto error;
     }
 
-    struct connection_task *t = malloc(sizeof *t);
+    struct rw_task *t = malloc(sizeof *t);
     if (!t) {
-        perror("Failed to allocate connection_task: ");
+        perror("Failed to allocate rw_task: ");
         goto error;
     }
-    *t = (struct connection_task) {
-        .dltask = {
-            .fn = connection_async,
+    *t = (struct rw_task) {
+        .task = {
+            .fn = read_async,
             .next = NULL
         },
         .clientfd = clientfd
     };
-    dlasync(&t->dltask);
+    dlasync(&t->task);
 
-    dlasync(&args->dltask); /* Schedule this to run recursively */
+    dlasync(&args->task); /* Schedule this to run recursively */
     return;
 
 error:
@@ -140,9 +143,9 @@ error:
 }
 
 static void
-connection_async(struct dltask *xargs)
+read_async(struct dltask *xargs)
 {
-    struct connection_task *arg = (struct connection_task *)xargs;
+    struct rw_task *arg = (struct rw_task *)xargs;
 
     char msg[4096];
 
@@ -163,9 +166,29 @@ connection_async(struct dltask *xargs)
            "\033[32m%s\033[m\n",
            dlworker_index(), msg);
 
-    /* Totally ignore what the client has to say and return garbage */
+    /*
+     * Totally ignore what the client has to say and return some HTML.
+     */
+    arg->task.fn = write_async;
+    dlcontinuation(xargs, xargs);
+    dlasync(xargs);
+    return;
+
+close_conn:
+    (void) shutdown(arg->clientfd, SHUT_RDWR);
+    (void) close(arg->clientfd);
+    free(arg);
+}
+
+static void
+write_async(struct dltask *xargs)
+{
+    struct rw_task *arg = (struct rw_task *)xargs;
+
     char response[64];
-    len = snprintf(response, 64, "HTTP/1.0 200 OK\n\n<html>You've been served by worker %d", dlworker_index());
+    ssize_t len = snprintf(response, 64,
+        "HTTP/1.0 200 OK\n\n<html>You've been served by worker %d",
+        dlworker_index());
     if (len < 0 || len >= 64) {
         perror("Failed to construct response: ");
         goto close_conn;

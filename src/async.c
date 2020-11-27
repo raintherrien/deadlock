@@ -25,6 +25,15 @@ dlasync(struct dltask *t)
     dlworker_async(dl_this_worker, t);
 }
 
+void
+dlcontinuation(struct dltask *this, struct dltask *next)
+{
+    if (this->next) {
+        next->next = this->next;
+        atomic_fetch_add_explicit(&this->next->wait, 1, memory_order_relaxed);
+    }
+}
+
 int
 dlmain(struct dltask *t, dlwentryfn wentryfn, dlwexitfn wexitfn)
 {
