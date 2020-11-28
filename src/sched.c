@@ -4,16 +4,19 @@
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
-#include <pthread.h>
 
 #include <immintrin.h> /* _mm_pause */
 
 void *
 dlsched_alloc(int nworkers)
 {
+    if (nworkers < 0) {
+        errno = ERANGE;
+        return NULL;
+    }
     /* Workers in dlsched are flexible array member */
     return malloc(sizeof(struct dlsched) +
-                  sizeof(struct dlworker) * nworkers);
+                  sizeof(struct dlworker) * (unsigned)nworkers);
 }
 
 void
@@ -26,9 +29,8 @@ dlsched_destroy(struct dlsched *s)
     }
     s->nworkers = 0;
 
-    if ((errno = pthread_cond_destroy (&s->stallcv )) ||
-        (errno = pthread_mutex_destroy(&s->stallmtx))) {
-        perror("dlsched_destroy freeing pthread objects: ");
+    if ((errno = dlwait_destroy(&s->stall))) {
+        perror("dlsched_destroy freeing dlwait");
         exit(errno);
     }
 }
@@ -46,15 +48,12 @@ dlsched_init(
 
     int result = 0;
 
-    s->terminate = 0;
-    s->wbarrier  = nworkers;
+    atomic_init(&s->terminate, 0);
+    atomic_init(&s->wbarrier, nworkers);
     s->nworkers  = nworkers;
 
-    result = pthread_cond_init(&s->stallcv, NULL);
-    if (result) goto stallcv_init_failed;
-
-    result = pthread_mutex_init(&s->stallmtx, NULL);
-    if (result) goto stallmtx_init_failed;
+    result = dlwait_init(&s->stall);
+    if (result) goto stall_init_failed;
 
     int w = 0;
     for (; w < nworkers; ++ w) {
@@ -76,16 +75,11 @@ dlworker_init_failed: {
             dlworker_destroy(s->workers + (unwind-1));
         }
     }
-    if (errno = pthread_mutex_destroy(&s->stallmtx)) {
-        perror("dlsched_init::dlworker_init_failed freeing stallmtx: ");
+    if ((errno = dlwait_destroy(&s->stall))) {
+        perror("dlsched_init::dlworker_init_failed freeing stall");
         exit(errno);
     }
-stallmtx_init_failed:
-    if (errno = pthread_cond_destroy(&s->stallcv)) {
-        perror("dlsched_init::stallmtx_init_failed freeing stallcv: ");
-        exit(errno);
-    }
-stallcv_init_failed:
+stall_init_failed:
     return errno = result;
 }
 
@@ -103,20 +97,21 @@ dlsched_join(struct dlsched *s)
  * performance! Further testing required...
  */
 int
-dlsched_steal(struct dlsched *s, struct dltask **dst, size_t src)
+dlsched_steal(struct dlsched *s, struct dltask **dst, int src)
 {
-    size_t tgt = 0;
+    int tgt = 0;
     for (int n = 0; n < s->nworkers; ++ n) {
         if (tgt == src) {
             ++ tgt;
             continue;
         }
         struct dlworker *victim = s->workers + tgt;
-        int rc;
-        do {
-            rc = dltqueue_steal(&victim->tqueue, dst);
+        steal: ;
+        int rc = dltqueue_steal(&victim->tqueue, dst);
+        if (rc == EAGAIN) {
             _mm_pause();
-        } while (rc == EAGAIN);
+            goto steal;
+        }
         switch (rc) {
             case ENODATA: ++ tgt; break;
             case 0: return 0;
@@ -132,8 +127,8 @@ dlsched_terminate(struct dlsched *s)
     atomic_store(&s->terminate, 1);
 
     do {
-        if ((errno = pthread_cond_broadcast(&s->stallcv))) {
-            perror("dlsched_terminate failed to broadcast on stallcv: ");
+        if ((errno = dlwait_broadcast(&s->stall))) {
+            perror("dlsched_terminate failed to broadcast on stall");
             exit(errno);
         }
     } while (atomic_load(&s->wbarrier) < s->nworkers);

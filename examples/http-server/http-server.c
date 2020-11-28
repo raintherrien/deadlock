@@ -100,7 +100,7 @@ start_listen(const char *port)
     }
 
     if (listen(sfd, 1024)) {
-        perror("listen on socket with backlog 1024 failed: ");
+        perror("listen on socket with backlog 1024 failed");
         exit(EXIT_FAILURE);
     }
 
@@ -117,13 +117,13 @@ accept_async(struct dltask *xargs)
     socklen_t          addrlen = sizeof(addr);
     int clientfd = accept(args->socketfd, (struct sockaddr *)&addr, &addrlen);
     if (clientfd == -1) {
-        perror("accept client failed: ");
+        perror("accept client failed");
         goto error;
     }
 
     struct rw_task *t = malloc(sizeof *t);
     if (!t) {
-        perror("Failed to allocate rw_task: ");
+        perror("Failed to allocate rw_task");
         goto error;
     }
     *t = (struct rw_task) {
@@ -153,7 +153,7 @@ read_async(struct dltask *xargs)
 
     if (len ==  0) goto close_conn; /* non-error */
     if (len == -1) {
-        perror("Failed to recieve from client: ");
+        perror("Failed to recieve from client");
         goto close_conn;
     }
     if (len == 4096) {
@@ -190,12 +190,12 @@ write_async(struct dltask *xargs)
         "HTTP/1.0 200 OK\n\n<html>You've been served by worker %d",
         dlworker_index());
     if (len < 0 || len >= 64) {
-        perror("Failed to construct response: ");
+        perror("Failed to construct response");
         goto close_conn;
     }
     ssize_t written = write(arg->clientfd, response, len);
     if (written != len) {
-        perror("Failed to write to client: ");
+        perror("Failed to write to client");
     }
 
 close_conn:

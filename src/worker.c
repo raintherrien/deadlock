@@ -3,9 +3,7 @@
 #include <errno.h>
 #include <stdint.h>
 #include <stdio.h>
-#include <pthread.h>
 
-#include <sched.h> /* sched_yield */
 #include <immintrin.h> /* _mm_pause */
 
 _Thread_local struct dlworker *dl_this_worker;
@@ -24,7 +22,11 @@ _Thread_local struct dlworker *dl_this_worker;
  * Zero is returned on success, otherwise no work is done and:
  * ENODATA is returned if the worker is unable to dequeue or steal work.
  */
-static void *dlworker_entry (void *);
+#ifdef _WIN32
+static unsigned long dlworker_entry(void*);
+#else
+static void *dlworker_entry(void*);
+#endif
 static void  dlworker_invoke(struct dlworker *, struct dltask *);
 static void  dlworker_stall (struct dlworker *);
 static int   dlworker_work  (struct dlworker *);
@@ -39,10 +41,10 @@ dlworker_async(struct dlworker *w, struct dltask *t)
      */
     switch (dltqueue_push(&w->tqueue, t)) {
     case 0: {
-        int result = pthread_cond_signal(&w->sched->stallcv);
+        int result = dlwait_signal(&w->sched->stall);
         if (result) {
             errno = result;
-            perror("dlworker_async failed to signal stallcv: ");
+            perror("dlworker_async failed to signal stall");
             exit(errno);
         }
         break;
@@ -62,8 +64,8 @@ dlworker_destroy(struct dlworker *w)
 void
 dlworker_join(struct dlworker *w)
 {
-    if ((errno = pthread_join(w->thread, NULL))) {
-        perror("dlworker_join failed to join worker thread: ");
+    if ((errno = dlthread_join(&w->thread))) {
+        perror("dlworker_join failed to join worker thread");
         exit(errno);
     }
 }
@@ -97,7 +99,7 @@ dlworker_init(
     }
 
     /* TODO: Thread pinning */
-    result = pthread_create(&w->thread, NULL, &dlworker_entry, w);
+    result = dlthread_create(&w->thread, dlworker_entry, w);
     if (result) goto pthread_create_failed;
 
     return 0;
@@ -109,7 +111,11 @@ tqueue_init_failed:
     return errno = result;
 }
 
+#ifdef _WIN32
+static unsigned long
+#else
 static void *
+#endif
 dlworker_entry(void *xworker)
 {
     struct dlworker *w = xworker;
@@ -122,13 +128,12 @@ dlworker_entry(void *xworker)
 
     /* Synchronize all workers before they start potentially stealing */
     atomic_fetch_sub(&w->sched->wbarrier, 1);
-    while(atomic_load(&w->sched->wbarrier) > 0)
-    {
+    while(atomic_load(&w->sched->wbarrier) > 0) {
         /* Short-circuit if terminate is called, not calling exit */
         if (atomic_load(&w->sched->terminate)) {
-            return NULL;
+            goto terminate;
         }
-        sched_yield();
+        dlsched_yield();
     }
 
     /* Work loop */
@@ -143,7 +148,7 @@ dlworker_entry(void *xworker)
                 dlworker_stall(w);
                 stall_count = 0;
             } else {
-                sched_yield();
+                dlsched_yield();
             }
         }
     }
@@ -156,7 +161,12 @@ dlworker_entry(void *xworker)
     /* Synchronize workers until they're all joinable */
     atomic_fetch_add(&w->sched->wbarrier, 1);
 
+terminate:
+#ifdef _WIN32
+    return 0;
+#else
     return NULL;
+#endif
 }
 
 static void
@@ -176,13 +186,11 @@ dlworker_invoke(struct dlworker *w, struct dltask *t)
 static void
 dlworker_stall(struct dlworker *w)
 {
-    int pr;
-    if ((pr = pthread_mutex_lock(&w->sched->stallmtx)) ||
-        (pr = pthread_cond_wait(&w->sched->stallcv, &w->sched->stallmtx)) ||
-        (pr = pthread_mutex_unlock(&w->sched->stallmtx)))
+    int pr = dlwait_wait(&w->sched->stall);
+    if (pr)
     {
         errno = pr;
-        perror("dlworker_stall failed to wait on cv: ");
+        perror("dlworker_stall failed to dlwait_wait on stall");
         exit(errno);
     }
 }
@@ -192,11 +200,12 @@ dlworker_work(struct dlworker *w)
 {
     struct dltask *t = NULL;
 
-    int rc;
-    do {
-        rc = dltqueue_take(&w->tqueue, &t);
+    take: ;
+    int rc = dltqueue_take(&w->tqueue, &t);
+    if (rc == EAGAIN) {
         _mm_pause();
-    } while (rc == EAGAIN);
+        goto take;
+    }
     switch (rc) {
     case 0:       goto invoke;
     case ENODATA: goto steal;

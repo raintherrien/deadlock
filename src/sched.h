@@ -1,6 +1,7 @@
 #ifndef DEADLOCK_SCHED_H_
 #define DEADLOCK_SCHED_H_
 
+#include "thread.h"
 #include "worker.h"
 #include <stdatomic.h>
 
@@ -39,8 +40,7 @@
  */
 
 struct dlsched {
-    pthread_cond_t  stallcv;
-    pthread_mutex_t stallmtx;
+    struct dlwait   stall;
     atomic_int      terminate;
     atomic_int      wbarrier;
     int             nworkers;
@@ -56,7 +56,7 @@ void *dlsched_alloc    (int nworkers);
 void  dlsched_destroy  (struct dlsched *);
 int   dlsched_init     (struct dlsched *, int, struct dltask *, dlwentryfn, dlwexitfn);
 void  dlsched_join     (struct dlsched *);
-int   dlsched_steal    (struct dlsched *, struct dltask **, size_t src);
+int   dlsched_steal    (struct dlsched *, struct dltask **, int src);
 void  dlsched_terminate(struct dlsched *);
 
 #endif /* DEADLOCK_SCHED_H_ */

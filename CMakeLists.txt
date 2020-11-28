@@ -20,7 +20,7 @@ find_package(Threads REQUIRED)
 # Add warnings
 # Note: add_compile_options propegates these options to e.g. examples.
 set(DEADLOCK_MSVC_WARNFLAGS /W4 /WX)
-set(DEADLOCK_OTHR_WARNFLAGS -Wall -Werror -Wextra -pedantic)
+set(DEADLOCK_OTHR_WARNFLAGS -Wall -Werror -Wextra)
 add_compile_options("$<IF:$<C_COMPILER_ID:MSVC>,${DEADLOCK_MSVC_WARNFLAGS},${DEADLOCK_OTHR_WARNFLAGS}>")
 
 set(DEADLOCK_SOURCES
@@ -33,12 +33,14 @@ target_include_directories(deadlock PUBLIC ${PROJECT_SOURCE_DIR}/include)
 target_link_libraries(deadlock PUBLIC Threads::Threads)
 
 # Required POSIX version for nanosleep in src/sched.c
-target_compile_definitions(deadlock PRIVATE _POSIX_C_SOURCE=199309L)
+if(UNIX)
+    target_compile_definitions(deadlock PRIVATE _POSIX_C_SOURCE=199309L)
+endif()
 
 option(DEADLOCK_BUILD_SAN "Build with sanitizers" OFF)
 if(DEADLOCK_BUILD_SAN)
     target_compile_options(deadlock PUBLIC -fsanitize=address,leak,undefined,pointer-compare,pointer-subtract -fstack-protector)
-    target_link_options(   deadlock PUBLIC -fsanitize=address,leak,undefined,pointer-compare,pointer-subtract -fstack-protector)
+    target_link_options   (deadlock PUBLIC -fsanitize=address,leak,undefined,pointer-compare,pointer-subtract -fstack-protector)
 endif()
 
 option(DEADLOCK_BUILD_TUNE "Build for this architecture" OFF)

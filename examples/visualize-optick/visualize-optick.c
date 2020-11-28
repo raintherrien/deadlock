@@ -4,7 +4,12 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+
+#ifdef _WIN32
+#include <Windows.h>
+#else
 #include <time.h> /* clock_gettime */
+#endif
 
 /*
  * worker_entry is responsible for setting up a thread context for
@@ -38,10 +43,10 @@ static struct dltask terminate_task = {
  */
 #define ROUNDS 8
 #define NTASKS 4096
-unsigned int progress[NTASKS] = { 0 };
-atomic_uint  guess  = 0;
-unsigned int target = 0;
-unsigned int roundn = 0;
+static unsigned int progress[NTASKS] = { 0 };
+static atomic_uint  guess  = 0;
+static unsigned int target = 0;
+static unsigned int roundn = 0;
 
 static void set_next_goal_and_fork_async(struct dltask *xargs);
 static struct dlnext set_next_goal_and_fork_task = {
@@ -65,7 +70,7 @@ static struct make_guess_and_advance_task {
         __func__, strlen(__func__),                    \
         __FILE__, strlen(__FILE__),                    \
         __LINE__);                                     \
-    uint64_t edata = OptickAPI_PushEvent(edesc);
+    uint64_t edata = OptickAPI_PushEvent(edesc)
 
 #define END_EVENT OptickAPI_PopEvent(edata); } while (0)
 
@@ -124,7 +129,7 @@ main(int argc, char **argv)
      * Transfer complete control to a Deadlock scheduler. This function
      * will return when our scheduler is terminated.
      */
-    int result = dlmainex(&set_next_goal_and_fork_task.task, worker_entry, NULL, num_threads);
+    int result = dlmainex(&set_next_goal_and_fork_task.task, worker_entry, NULL, (int)num_threads);
     if (result) perror("Error in dlmain");
 
     free(make_guess_and_advance_tasks);
@@ -136,8 +141,12 @@ static void
 worker_entry(int id)
 {
     char threadname[16] = { '\0' };
+#ifdef _WIN32
+    sscanf_s(threadname, "Worker %d", &id);
+#else
     sscanf(threadname, "Worker %d", &id);
-    OptickAPI_RegisterThread(threadname, strlen(threadname));
+#endif
+    OptickAPI_RegisterThread(threadname, (uint16_t)strlen(threadname));
 }
 
 static void
@@ -145,7 +154,7 @@ terminate_async(struct dltask *xargs)
 {
     (void) xargs;
     const char *optfn = "fork-join";
-    OptickAPI_StopCapture(optfn, strlen(optfn));
+    OptickAPI_StopCapture(optfn, (uint16_t)strlen(optfn));
     dlterminate();
 }
 
@@ -157,15 +166,15 @@ set_next_goal_and_fork_async(struct dltask *xargs)
     OptickAPI_NextFrame();
     BGN_EVENT;
 
-    struct timespec t0, t1;
-    clock_gettime(CLOCK_REALTIME, &t0);
+    //struct timespec t0, t1;
+    //clock_gettime(CLOCK_REALTIME, &t0);
 
     printf("Beginning round %u\n", roundn);
-    if (++ roundn == 8) {
+    if (++ roundn == ROUNDS) {
         dlasync(&terminate_task);
     } else {
         /* Reset wait counter */
-        set_next_goal_and_fork_task.wait = NTASKS;
+        atomic_store_explicit(&set_next_goal_and_fork_task.wait, NTASKS, memory_order_relaxed);
 
         target = rand() % NTASKS;
         for (size_t i = 0; i < NTASKS; ++ i) {
@@ -173,10 +182,10 @@ set_next_goal_and_fork_async(struct dltask *xargs)
         }
     }
 
-    clock_gettime(CLOCK_REALTIME, &t1);
-    unsigned long total_time_ns = (t1.tv_sec-t0.tv_sec) * 1000000000 + t1.tv_nsec-t0.tv_nsec;
-    printf("\tset_next_goal_and_fork_async took: %luns\n", total_time_ns);
-    printf("\tapprox. time per task: %luns\n", total_time_ns / NTASKS);
+    //clock_gettime(CLOCK_REALTIME, &t1);
+    //unsigned long total_time_ns = (t1.tv_sec-t0.tv_sec) * 1000000000 + t1.tv_nsec-t0.tv_nsec;
+    //printf("\tset_next_goal_and_fork_async took: %luns\n", total_time_ns);
+    //printf("\tapprox. time per task: %luns\n", total_time_ns / NTASKS);
 
     END_EVENT;
 }
@@ -202,8 +211,12 @@ make_guess_and_advance_async(struct dltask *xargs)
      * the 32 hardware threads of my 3950x to fight over without too
      * much stalling.
      */
+#ifdef _WIN32
+    Sleep(0);
+#else
     struct timespec timeout = { .tv_sec = 0, .tv_nsec = 10 };
     (void) nanosleep(&timeout, NULL);
+#endif
 
     END_EVENT;
 }

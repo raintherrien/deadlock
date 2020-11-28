@@ -7,7 +7,11 @@
 #include <limits.h>
 #include <stdlib.h>
 
+#ifdef _WIN32
+/* XXX */
+#else
 #include <unistd.h> /* sysconf */
+#endif
 
 /*
  * dl_default_sched is a singleton used by dlmain() and dlterminate().
@@ -37,7 +41,11 @@ dlcontinuation(struct dltask *this, struct dltask *next)
 int
 dlmain(struct dltask *t, dlwentryfn wentryfn, dlwexitfn wexitfn)
 {
+#ifdef _WIN32
+    long ncpu = 32; /* XXX GetSystemInfo(&system_info); system_info.dwNumberOfProcessors; */
+#else
     long ncpu = sysconf(_SC_NPROCESSORS_ONLN);
+#endif
     if (ncpu < 0) return errno;
     if (ncpu == 0 || ncpu > INT_MAX) return errno = ERANGE;
     return dlmainex(t, wentryfn, wexitfn, (int)ncpu);

@@ -1,8 +1,8 @@
 #ifndef DEADLOCK_WORKER_H_
 #define DEADLOCK_WORKER_H_
 
+#include "thread.h"
 #include "tqueue.h"
-#include <pthread.h>
 
 /*
  * Each dlworker owns a queue of tasks and spawns a thread to execute
@@ -33,9 +33,9 @@ struct dlsched;
 struct dlworker {
     struct dltqueue tqueue;
     struct dlsched *sched;
+    struct dlthread thread;
     dlwentryfn      entry;
     dlwexitfn       exit;
-    pthread_t       thread;
     int             index;
 };
 
@@ -50,5 +50,7 @@ int  dlworker_init(
     dlwexitfn        exit,
     int              index
 );
+
+extern _Thread_local struct dlworker* dl_this_worker;
 
 #endif /* DEADLOCK_WORKER_H_ */
