@@ -22,14 +22,10 @@ _Thread_local struct dlworker *dl_this_worker;
  * Zero is returned on success, otherwise no work is done and:
  * ENODATA is returned if the worker is unable to dequeue or steal work.
  */
-#ifdef _WIN32
-static unsigned long dlworker_entry(void*);
-#else
-static void *dlworker_entry(void*);
-#endif
-static void  dlworker_invoke(struct dlworker *, struct dltask *);
-static void  dlworker_stall (struct dlworker *);
-static int   dlworker_work  (struct dlworker *);
+static void dlworker_entry(void*);
+static void dlworker_invoke(struct dlworker *, struct dltask *);
+static void dlworker_stall (struct dlworker *);
+static int  dlworker_work  (struct dlworker *);
 
 void
 dlworker_async(struct dlworker *w, struct dltask *t)
@@ -111,11 +107,7 @@ tqueue_init_failed:
     return errno = result;
 }
 
-#ifdef _WIN32
-static unsigned long
-#else
-static void *
-#endif
+static void
 dlworker_entry(void *xworker)
 {
     struct dlworker *w = xworker;
@@ -133,7 +125,7 @@ dlworker_entry(void *xworker)
         if (atomic_load(&w->sched->terminate)) {
             goto terminate;
         }
-        dlsched_yield();
+        dlthread_yield();
     }
 
     /* Work loop */
@@ -144,11 +136,11 @@ dlworker_entry(void *xworker)
         if (dlworker_work(w) != ENODATA) {
             stall_count = 0;
         } else {
-            if (++ stall_count < 16) {
+            if (++ stall_count > 16) {
                 dlworker_stall(w);
                 stall_count = 0;
             } else {
-                dlsched_yield();
+                dlthread_yield();
             }
         }
     }
@@ -162,11 +154,7 @@ dlworker_entry(void *xworker)
     atomic_fetch_add(&w->sched->wbarrier, 1);
 
 terminate:
-#ifdef _WIN32
-    return 0;
-#else
-    return NULL;
-#endif
+    return;
 }
 
 static void
