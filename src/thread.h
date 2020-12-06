@@ -36,12 +36,13 @@ dlprocessorcount(void)
 {
     SYSTEM_INFO sysinfo;
     GetSystemInfo(&sysinfo);
-    return sysinfo.dwNumberOfProcessors;
+    return (int)sysinfo.dwNumberOfProcessors;
 }
 
 static inline DWORD
-dlwinthreadfwd(LPVOID dlt)
+dlwinthreadfwd(LPVOID xdlt)
 {
+    struct dlthread *dlt = xdlt;
     dlt->fn(dlt->arg);
     return 1;
 }
@@ -72,6 +73,7 @@ dlthread_join(struct dlthread *t)
         /* TODO: GetLastError does not return errno values */
         return -1;
     }
+    return 0;
 }
 
 static inline void
@@ -124,6 +126,7 @@ static inline int
 dlwait_destroy(struct dlwait *wait)
 {
     /* Win32 SRW and CV are stateless :) */
+    (void) wait;
     return 0;
 }
 

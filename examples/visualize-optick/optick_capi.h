@@ -48,9 +48,9 @@ extern "C" {
 	OPTICK_API uint64_t OptickAPI_PushEvent(uint64_t inEventDescription);
 	OPTICK_API void OptickAPI_PopEvent(uint64_t inEventData);
 	
-	OPTICK_API void OptickAPI_NextFrame();
+	OPTICK_API void OptickAPI_NextFrame(void);
 
-	OPTICK_API void OptickAPI_StartCapture();
+	OPTICK_API void OptickAPI_StartCapture(void);
 	OPTICK_API void OptickAPI_StopCapture(const char* inFileName, uint16_t inFileNameLength);
 
 	OPTICK_API void OptickAPI_AttachTag_String(uint64_t inEventDescription, const char* inValue, uint16_t intValueLength);
