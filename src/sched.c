@@ -39,7 +39,7 @@ int
 dlsched_init(
     struct dlsched *s,
     int             nworkers,
-    struct dltask  *task,
+    dltask         *task,
     dlwentryfn      entryfn,
     dlwexitfn       exitfn
 )
@@ -97,7 +97,7 @@ dlsched_join(struct dlsched *s)
  * performance! Further testing required...
  */
 int
-dlsched_steal(struct dlsched *s, struct dltask **dst, int src)
+dlsched_steal(struct dlsched *s, dltask **dst, int src)
 {
     int tgt = 0;
     for (int n = 0; n < s->nworkers; ++ n) {

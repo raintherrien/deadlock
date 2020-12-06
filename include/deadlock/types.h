@@ -4,8 +4,8 @@
 #include <stdatomic.h>
 #include <stddef.h>
 
-struct dltask;
-struct dlnext;
+struct dltask_;
+typedef struct dltask_ dltask;
 
 /*
  * Intel 64 and IA-32 references manuals instruct you to align memory to
@@ -23,27 +23,19 @@ struct dlnext;
  * task struct A so that a pointer to A may be cast to a dltask pointer
  * to the first member (C11 6.7.2.1) and vice-versa. This is akin to
  * basic inheritance in C++.
- *
- * You can see this convention in action in dlnext, which extends dltask
- * with an atomic wait counter.
  */
-typedef void(*dltaskfn)(struct dltask *);
+typedef void(*dltaskfn)(dltask *);
 
 /*
- * A dltask contains a function pointer to invoke and an optional dlnext
+ * A dltask contains a function pointer to invoke and an optional next
  * task to conditionally invoke upon successful execution of this task.
- *
- * dlnext is a specialized task. wait is the number of tasks this task
- * is waiting on before it will be scheduled.
+ * wait is the number of tasks this task is waiting on before it will be
+ * scheduled.
  */
-struct dltask {
-    dltaskfn       fn;
-    struct dlnext *next;
-};
-
-struct dlnext {
-    struct dltask task;
-    atomic_uint   wait;
+struct dltask_ {
+    dltaskfn    fn;
+    dltask     *next;
+    atomic_uint wait;
 };
 
 /*

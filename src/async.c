@@ -16,14 +16,14 @@ static               struct dlsched  *dl_default_sched = NULL;
 extern _Thread_local struct dlworker *dl_this_worker;
 
 void
-dlasync(struct dltask *t)
+dlasync(dltask *t)
 {
     assert(dl_this_worker);
     dlworker_async(dl_this_worker, t);
 }
 
 void
-dlcontinuation(struct dltask *this, struct dltask *next)
+dlcontinuation(dltask *this, dltask *next)
 {
     if (this->next) {
         next->next = this->next;
@@ -32,7 +32,7 @@ dlcontinuation(struct dltask *this, struct dltask *next)
 }
 
 int
-dlmain(struct dltask *t, dlwentryfn wentryfn, dlwexitfn wexitfn)
+dlmain(dltask *t, dlwentryfn wentryfn, dlwexitfn wexitfn)
 {
     errno = 0;
     int ncpu = dlprocessorcount();
@@ -41,7 +41,7 @@ dlmain(struct dltask *t, dlwentryfn wentryfn, dlwexitfn wexitfn)
 }
 
 int
-dlmainex(struct dltask *t, dlwentryfn wentryfn, dlwexitfn wexitfn, int workers)
+dlmainex(dltask *t, dlwentryfn wentryfn, dlwexitfn wexitfn, int workers)
 {
     assert(!dl_default_sched);
 

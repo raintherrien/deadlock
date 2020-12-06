@@ -23,12 +23,12 @@ _Thread_local struct dlworker *dl_this_worker;
  * ENODATA is returned if the worker is unable to dequeue or steal work.
  */
 static void dlworker_entry(void*);
-static void dlworker_invoke(struct dlworker *, struct dltask *);
+static void dlworker_invoke(struct dlworker *, dltask *);
 static void dlworker_stall (struct dlworker *);
 static int  dlworker_work  (struct dlworker *);
 
 void
-dlworker_async(struct dlworker *w, struct dltask *t)
+dlworker_async(struct dlworker *w, dltask *t)
 {
     /*
      * dltqueue_push shall only return success or ENOBUFS. If there is
@@ -70,7 +70,7 @@ int
 dlworker_init(
     struct dlworker *w,
     struct dlsched  *s,
-    struct dltask   *task,
+    dltask          *task,
     dlwentryfn       entry,
     dlwexitfn        exit,
     int              index
@@ -158,16 +158,16 @@ terminate:
 }
 
 static void
-dlworker_invoke(struct dlworker *w, struct dltask *t)
+dlworker_invoke(struct dlworker *w, dltask *t)
 {
-    struct dlnext *next = t->next;
+    dltask *next = t->next;
 
     (*t->fn)(t);
 
     if (next != NULL && 1 == atomic_fetch_sub_explicit(&next->wait, 1,
                                memory_order_release))
     {
-        dlworker_async(w, &next->task);
+        dlworker_async(w, next);
     }
 }
 
@@ -186,7 +186,7 @@ dlworker_stall(struct dlworker *w)
 static int
 dlworker_work(struct dlworker *w)
 {
-    struct dltask *t = NULL;
+    dltask *t = NULL;
 
     take: ;
     int rc = dltqueue_take(&w->tqueue, &t);

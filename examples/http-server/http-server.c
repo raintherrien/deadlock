@@ -20,10 +20,10 @@ static int start_listen(const char *port);
  * Schedules itself recursively on success.
  */
 struct accept_task {
-    struct dltask task;
+    dltask task;
     int socketfd;
 };
-static void accept_async(struct dltask *);
+static void accept_async(dltask *);
 
 /*
  * read_async reads payload from client, performs zero validation,
@@ -32,11 +32,11 @@ static void accept_async(struct dltask *);
  * Out of sheer laziness, define a generic task for both read and write.
  */
 struct rw_task {
-    struct dltask task;
+    dltask task;
     int clientfd;
 };
-static void read_async(struct dltask *);
-static void write_async(struct dltask *);
+static void read_async(dltask *);
+static void write_async(dltask *);
 
 int
 main(int argc, char** argv)
@@ -109,7 +109,7 @@ start_listen(const char *port)
 }
 
 static void
-accept_async(struct dltask *xargs)
+accept_async(dltask *xargs)
 {
     struct accept_task *args = (struct accept_task *)xargs;
 
@@ -143,7 +143,7 @@ error:
 }
 
 static void
-read_async(struct dltask *xargs)
+read_async(dltask *xargs)
 {
     struct rw_task *arg = (struct rw_task *)xargs;
 
@@ -181,7 +181,7 @@ close_conn:
 }
 
 static void
-write_async(struct dltask *xargs)
+write_async(dltask *xargs)
 {
     struct rw_task *arg = (struct rw_task *)xargs;
 

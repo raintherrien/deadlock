@@ -21,8 +21,8 @@ static void worker_entry(int);
 /*
  * terminte_async terminates the scheduler and dumps our Optick capture.
  */
-static void terminate_async(struct dltask *);
-static struct dltask terminate_task = {
+static void terminate_async(dltask *);
+static dltask terminate_task = {
     .fn = terminate_async,
     .next = NULL
 };
@@ -48,17 +48,15 @@ static atomic_uint  guess  = 0;
 static unsigned int target = 0;
 static unsigned int roundn = 0;
 
-static void set_next_goal_and_fork_async(struct dltask *xargs);
-static struct dlnext set_next_goal_and_fork_task = {
-    .task = {
-        .fn = set_next_goal_and_fork_async,
-        .next = NULL
-    }
+static void set_next_goal_and_fork_async(dltask *xargs);
+static dltask set_next_goal_and_fork_task = {
+    .fn = set_next_goal_and_fork_async,
+    .next = NULL
 };
 
-static void make_guess_and_advance_async(struct dltask *xargs);
+static void make_guess_and_advance_async(dltask *xargs);
 static struct make_guess_and_advance_task {
-    struct dltask dltask;
+    dltask dltask;
     size_t id;
 } *make_guess_and_advance_tasks;
 
@@ -111,7 +109,7 @@ main(int argc, char **argv)
     }
     for (size_t i = 0; i < NTASKS; ++ i) {
         make_guess_and_advance_tasks[i] = (struct make_guess_and_advance_task) {
-            .dltask = (struct dltask) {
+            .dltask = (dltask) {
                 .fn = make_guess_and_advance_async,
                 .next = &set_next_goal_and_fork_task
             },
@@ -129,7 +127,7 @@ main(int argc, char **argv)
      * Transfer complete control to a Deadlock scheduler. This function
      * will return when our scheduler is terminated.
      */
-    int result = dlmainex(&set_next_goal_and_fork_task.task, worker_entry, NULL, (int)num_threads);
+    int result = dlmainex(&set_next_goal_and_fork_task, worker_entry, NULL, (int)num_threads);
     if (result) perror("Error in dlmain");
 
     free(make_guess_and_advance_tasks);
@@ -150,7 +148,7 @@ worker_entry(int id)
 }
 
 static void
-terminate_async(struct dltask *xargs)
+terminate_async(dltask *xargs)
 {
     (void) xargs;
     const char *optfn = "fork-join";
@@ -159,7 +157,7 @@ terminate_async(struct dltask *xargs)
 }
 
 static void
-set_next_goal_and_fork_async(struct dltask *xargs)
+set_next_goal_and_fork_async(dltask *xargs)
 {
     (void) xargs; /* ignore set_next_goal_and_fork_task */
 
@@ -191,7 +189,7 @@ set_next_goal_and_fork_async(struct dltask *xargs)
 }
 
 static void
-make_guess_and_advance_async(struct dltask *xargs)
+make_guess_and_advance_async(dltask *xargs)
 {
     BGN_EVENT;
 

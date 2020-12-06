@@ -25,10 +25,10 @@
  * dlworker_index() returns the index of this worker thread.
  */
 
-void dlasync       (struct dltask *);
-void dlcontinuation(struct dltask *this, struct dltask *next);
-int  dlmain        (struct dltask *, dlwentryfn, dlwexitfn);
-int  dlmainex      (struct dltask *, dlwentryfn, dlwexitfn, int workers);
+void dlasync       (dltask *);
+void dlcontinuation(dltask *this, dltask *next);
+int  dlmain        (dltask *, dlwentryfn, dlwexitfn);
+int  dlmainex      (dltask *, dlwentryfn, dlwexitfn, int workers);
 void dlterminate(void);
 
 int  dlworker_index(void);
