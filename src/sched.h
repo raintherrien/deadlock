@@ -54,9 +54,9 @@ struct dlentryargs {
 
 void *dlsched_alloc    (int nworkers);
 void  dlsched_destroy  (struct dlsched *);
-int   dlsched_init     (struct dlsched *, int, dltask *, dlwentryfn, dlwexitfn);
+int   dlsched_init     (struct dlsched *, int, struct dltask *, dlwentryfn, dlwexitfn);
 void  dlsched_join     (struct dlsched *);
-int   dlsched_steal    (struct dlsched *, dltask **, int src);
+int   dlsched_steal    (struct dlsched *, struct dltask **, int src);
 void  dlsched_terminate(struct dlsched *);
 
 #endif /* DEADLOCK_SCHED_H_ */

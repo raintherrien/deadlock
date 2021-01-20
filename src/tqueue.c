@@ -33,7 +33,7 @@ dltqueue_init(struct dltqueue *q, unsigned int size)
 }
 
 int
-dltqueue_push(struct dltqueue *q, dltask *tsk)
+dltqueue_push(struct dltqueue *q, struct dltask *tsk)
 {
     unsigned h = atomic_load_explicit(&q->head, memory_order_relaxed);
     unsigned t = atomic_load_explicit(&q->tail, memory_order_acquire);
@@ -48,7 +48,7 @@ dltqueue_push(struct dltqueue *q, dltask *tsk)
 }
 
 int
-dltqueue_steal(struct dltqueue *q, dltask **dst)
+dltqueue_steal(struct dltqueue *q, struct dltask **dst)
 {
     unsigned t = atomic_load_explicit(&q->tail, memory_order_acquire);
     atomic_thread_fence(memory_order_seq_cst);
@@ -85,7 +85,7 @@ dltqueue_steal(struct dltqueue *q, dltask **dst)
  * implemented this, I'm probably wrong!
  */
 int
-dltqueue_take(struct dltqueue *q, dltask **dst)
+dltqueue_take(struct dltqueue *q, struct dltask **dst)
 {
     int rc = 0;
 

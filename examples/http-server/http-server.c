@@ -20,10 +20,10 @@ static int start_listen(const char *port);
  * Schedules itself recursively on success.
  */
 struct accept_task {
-    dltask task;
+    struct dltask dlt;
     int socketfd;
 };
-static void accept_async(dltask *);
+static void accept_async(struct dltask *);
 
 /*
  * read_async reads payload from client, performs zero validation,
@@ -32,11 +32,11 @@ static void accept_async(dltask *);
  * Out of sheer laziness, define a generic task for both read and write.
  */
 struct rw_task {
-    dltask task;
+    struct dltask dlt;
     int clientfd;
 };
-static void read_async(dltask *);
-static void write_async(dltask *);
+static void read_async(struct dltask *);
+static void write_async(struct dltask *);
 
 int
 main(int argc, char** argv)
@@ -48,13 +48,10 @@ main(int argc, char** argv)
      * will return when our scheduler is terminated.
      */
     struct accept_task accept_task = {
-        .task = {
-            .fn = accept_async,
-            .next = NULL
-        },
+        .dlt = { .fn = accept_async },
         .socketfd = socketfd
     };
-    int result = dlmain(&accept_task.task, NULL, NULL);
+    int result = dlmain(&accept_task.dlt, NULL, NULL);
     if (result) perror("Error in dlmain");
 
     close(socketfd);
@@ -109,9 +106,9 @@ start_listen(const char *port)
 }
 
 static void
-accept_async(dltask *xargs)
+accept_async(struct dltask *xargs)
 {
-    struct accept_task *args = (struct accept_task *)xargs;
+    struct accept_task *args = dldowncast(xargs, struct accept_task, dlt);
 
     struct sockaddr_in addr;
     socklen_t          addrlen = sizeof(addr);
@@ -127,15 +124,12 @@ accept_async(dltask *xargs)
         goto error;
     }
     *t = (struct rw_task) {
-        .task = {
-            .fn = read_async,
-            .next = NULL
-        },
+        .dlt = { .fn = read_async },
         .clientfd = clientfd
     };
-    dlasync(&t->task);
+    dlasync(&t->dlt);
 
-    dlasync(&args->task); /* Schedule this to run recursively */
+    dlasync(&args->dlt); /* Schedule this to run recursively */
     return;
 
 error:
@@ -143,9 +137,9 @@ error:
 }
 
 static void
-read_async(dltask *xargs)
+read_async(struct dltask *xargs)
 {
-    struct rw_task *arg = (struct rw_task *)xargs;
+    struct rw_task *arg = dldowncast(xargs, struct rw_task, dlt);
 
     char msg[4096];
 
@@ -169,7 +163,7 @@ read_async(dltask *xargs)
     /*
      * Totally ignore what the client has to say and return some HTML.
      */
-    arg->task.fn = write_async;
+    arg->dlt.fn = write_async;
     dlcontinuation(xargs, xargs);
     dlasync(xargs);
     return;
@@ -181,9 +175,9 @@ close_conn:
 }
 
 static void
-write_async(dltask *xargs)
+write_async(struct dltask *xargs)
 {
-    struct rw_task *arg = (struct rw_task *)xargs;
+    struct rw_task *arg = dldowncast(xargs, struct rw_task, dlt);
 
     char response[64];
     ssize_t len = snprintf(response, 64,

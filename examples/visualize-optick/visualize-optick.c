@@ -19,13 +19,12 @@
 static void worker_entry(int);
 
 /*
- * terminte_async terminates the scheduler and dumps our Optick capture.
+ * terminate_task/async terminates the scheduler and dumps our capture.
+ * This is a stateless task.
  */
-static void terminate_async(dltask *);
-static dltask terminate_task = {
-    .fn = terminate_async,
-    .next = NULL
-};
+
+static void terminate_async(struct dltask *);
+static struct dltask terminate_task = { .fn = terminate_async };
 
 /*
  * This example runs for a set number of rounds, each round setting a
@@ -48,15 +47,14 @@ static atomic_uint  guess  = 0;
 static unsigned int target = 0;
 static unsigned int roundn = 0;
 
-static void set_next_goal_and_fork_async(dltask *xargs);
-static dltask set_next_goal_and_fork_task = {
-    .fn = set_next_goal_and_fork_async,
-    .next = NULL
+static void set_next_goal_and_fork_async(struct dltask *xargs);
+static struct dltask set_next_goal_and_fork_task = {
+    .fn = set_next_goal_and_fork_async
 };
 
-static void make_guess_and_advance_async(dltask *xargs);
+static void make_guess_and_advance_async(struct dltask *xargs);
 static struct make_guess_and_advance_task {
-    dltask dltask;
+    struct dltask dlt;
     size_t id;
 } *make_guess_and_advance_tasks;
 
@@ -109,7 +107,7 @@ main(int argc, char **argv)
     }
     for (size_t i = 0; i < NTASKS; ++ i) {
         make_guess_and_advance_tasks[i] = (struct make_guess_and_advance_task) {
-            .dltask = (dltask) {
+            .dlt = (struct dltask) {
                 .fn = make_guess_and_advance_async,
                 .next = &set_next_goal_and_fork_task
             },
@@ -148,7 +146,7 @@ worker_entry(int id)
 }
 
 static void
-terminate_async(dltask *xargs)
+terminate_async(struct dltask *xargs)
 {
     (void) xargs;
     const char *optfn = "fork-join";
@@ -157,7 +155,7 @@ terminate_async(dltask *xargs)
 }
 
 static void
-set_next_goal_and_fork_async(dltask *xargs)
+set_next_goal_and_fork_async(struct dltask *xargs)
 {
     (void) xargs; /* ignore set_next_goal_and_fork_task */
 
@@ -176,7 +174,7 @@ set_next_goal_and_fork_async(dltask *xargs)
 
         target = rand() % NTASKS;
         for (size_t i = 0; i < NTASKS; ++ i) {
-            dlasync(&make_guess_and_advance_tasks[i].dltask);
+            dlasync(&make_guess_and_advance_tasks[i].dlt);
         }
     }
 
@@ -189,11 +187,11 @@ set_next_goal_and_fork_async(dltask *xargs)
 }
 
 static void
-make_guess_and_advance_async(dltask *xargs)
+make_guess_and_advance_async(struct dltask *xargs)
 {
     BGN_EVENT;
 
-    struct make_guess_and_advance_task *this = (struct make_guess_and_advance_task *)xargs;
+    struct make_guess_and_advance_task *this = dldowncast(xargs, struct make_guess_and_advance_task, dlt);
     unsigned int this_guess = atomic_fetch_add(&guess, 1);
     if (this_guess == target) {
         ++ progress[this->id];

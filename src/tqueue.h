@@ -39,19 +39,21 @@
  * ENODATA where specified above.
  */
 
+typedef _Atomic(struct dltask *) atomic_task_ptr;
+
 struct dltqueue {
     _Alignas(DEADLOCK_CLSZ)
-    atomic_uint        head;
+    atomic_uint      head;
     _Alignas(DEADLOCK_CLSZ)
-    atomic_uint        tail;
-    _Atomic(dltask *) *tasks;
-    unsigned int       szmask;
+    atomic_uint      tail;
+    atomic_task_ptr *tasks;
+    unsigned int     szmask;
 };
 
 void dltqueue_destroy(struct dltqueue *);
 int  dltqueue_init   (struct dltqueue *, unsigned int size);
-int  dltqueue_push   (struct dltqueue *, dltask *);
-int  dltqueue_steal  (struct dltqueue *, dltask **dst);
-int  dltqueue_take   (struct dltqueue *, dltask **dst);
+int  dltqueue_push   (struct dltqueue *, struct dltask *);
+int  dltqueue_steal  (struct dltqueue *, struct dltask **dst);
+int  dltqueue_take   (struct dltqueue *, struct dltask **dst);
 
 #endif /* DEADLOCK_TQUEUE_H_ */

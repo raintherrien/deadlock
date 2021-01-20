@@ -39,13 +39,13 @@ struct dlworker {
     int             index;
 };
 
-void dlworker_async  (struct dlworker *, dltask *);
+void dlworker_async  (struct dlworker *, struct dltask *);
 void dlworker_destroy(struct dlworker *);
 void dlworker_join   (struct dlworker *);
 int  dlworker_init(
     struct dlworker *w,
     struct dlsched  *s,
-    dltask          *task,
+    struct dltask   *task,
     dlwentryfn       entry,
     dlwexitfn        exit,
     int              index
