@@ -1,6 +1,7 @@
 #include "deadlock/async.h"
 #include "optick_capi.h"
 #include <errno.h>
+#include <limits.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -12,51 +13,58 @@
 #endif
 
 /*
- * worker_entry is responsible for setting up a thread context for
- * profiling before any tasks are executed.
- */
-
-static void worker_entry(int);
-
-/*
- * terminate_task/async terminates the scheduler and dumps our capture.
- * This is a stateless task.
- */
-
-static void terminate_async(struct dltask *);
-static struct dltask terminate_task = { .fn = terminate_async };
-
-/*
  * This example runs for a set number of rounds, each round setting a
- * random target in the range [0..NTASKS), then kicks off NTASKS child
- * tasks, each of which concurrently increment the global guess.
- * Whichever task guesses correctly increments its own progress meter by
- * one. Once all NTASKS are complete, a new round begins.
+ * random target in the range [0..NUM_CONTESTANTS), then forks
+ * NUM_CONTESTANTS child tasks, each of which concurrently increment the
+ * global guess variable.
  *
- * TODO: Announce winner(s)
- *
- * set_next_goal_and_fork_async sets the new guess and spawns NTASKS
- * child tasks.
- *
- * make_guess_and_advance_async is the child task which makes a guess.
+ * Whichever task guesses correctly increments its own score by one.
+ * Once all NUM_CONTESTANTS join, a new round begins.
  */
-#define ROUNDS 8
-#define NTASKS 4096
-static unsigned int progress[NTASKS] = { 0 };
-static atomic_uint  guess  = 0;
-static unsigned int target = 0;
-static unsigned int roundn = 0;
+#define NUM_ROUNDS      8
+#define NUM_CONTESTANTS 4096
 
-static void set_next_goal_and_fork_async(struct dltask *xargs);
-static struct dltask set_next_goal_and_fork_task = {
-    .fn = set_next_goal_and_fork_async
+/*
+ * Responsible for setting up a thread context for profiling before any
+ * tasks are executed.
+ */
+void worker_entry(int);
+
+struct contestant_pkg;
+struct game_pkg;
+struct terminate_pkg;
+
+/*
+ * Announces a winner, terminates the scheduler, and dumps our capture.
+ */
+struct terminate_pkg {
+    struct dltask task;
+    unsigned int  winner;
 };
+void terminate_run(struct dltask *);
 
-static void make_guess_and_advance_async(struct dltask *xargs);
-static struct make_guess_and_advance_task {
-    struct dltask dlt;
-    size_t id;
-} *make_guess_and_advance_tasks;
+/*
+ * Performs a guess.
+ */
+struct contestant_pkg {
+    struct dltask    task;
+    struct game_pkg *game;
+    unsigned int     score;
+};
+void contestant_run(struct dltask *);
+
+/*
+ * Orchestrates the whole mess.
+ */
+struct game_pkg {
+    struct dltask         task;
+    atomic_uint           guess;
+    unsigned int          target;
+    unsigned int          round;
+    struct terminate_pkg  terminate;
+    struct contestant_pkg contestants[];
+};
+void game_run(struct dltask *);
 
 /*
  * Helper macros to scope Optick events
@@ -98,20 +106,33 @@ main(int argc, char **argv)
     }
 
     /*
-     * Allocate and initialize our child tasks.
+     * Allocate and initialize our game state. game_pkg is a recursive
+     * task which executes NUM_ROUNDS times.
      */
-    make_guess_and_advance_tasks = calloc(NTASKS, sizeof *make_guess_and_advance_tasks);
-    if (!make_guess_and_advance_tasks) {
-        perror("Failed to allocate tasks");
+    struct game_pkg *game = malloc(sizeof *game + sizeof(struct contestant_pkg) * NUM_CONTESTANTS);
+    if (!game) {
+        perror("Failed to allocate game state");
         return EXIT_FAILURE;
     }
-    for (size_t i = 0; i < NTASKS; ++ i) {
-        make_guess_and_advance_tasks[i] = (struct make_guess_and_advance_task) {
-            .dlt = (struct dltask) {
-                .fn = make_guess_and_advance_async,
-                .next = &set_next_goal_and_fork_task
+    *game = (struct game_pkg) {
+        .task = (struct dltask) {
+            .fn = game_run,
+            .next = &game->task
+        },
+        .round = 0
+    };
+
+    /*
+     * Initialize contestants
+     */
+    for (unsigned int i = 0; i < NUM_CONTESTANTS; ++ i) {
+        game->contestants[i] = (struct contestant_pkg) {
+            .task = (struct dltask) {
+                .fn = contestant_run,
+                .next = &game->task
             },
-            .id = i
+            .game = game,
+            .score = 0
         };
     }
 
@@ -125,15 +146,15 @@ main(int argc, char **argv)
      * Transfer complete control to a Deadlock scheduler. This function
      * will return when our scheduler is terminated.
      */
-    int result = dlmainex(&set_next_goal_and_fork_task, worker_entry, NULL, (int)num_threads);
+    int result = dlmainex(&game->task, worker_entry, NULL, (int)num_threads);
     if (result) perror("Error in dlmain");
 
-    free(make_guess_and_advance_tasks);
+    free(game);
 
     return result;
 }
 
-static void
+void
 worker_entry(int id)
 {
     char threadname[16] = { '\0' };
@@ -145,56 +166,70 @@ worker_entry(int id)
     OptickAPI_RegisterThread(threadname, (uint16_t)strlen(threadname));
 }
 
-static void
-terminate_async(struct dltask *xargs)
+void
+terminate_run(struct dltask *xtask)
 {
-    (void) xargs;
+    struct terminate_pkg *pkg = dldowncast(xtask, struct terminate_pkg, task);
+    printf("Congratulations contestant %u!\n", pkg->winner);
     const char *optfn = "fork-join";
     OptickAPI_StopCapture(optfn, (uint16_t)strlen(optfn));
     dlterminate();
 }
 
-static void
-set_next_goal_and_fork_async(struct dltask *xargs)
+void
+game_run(struct dltask *xtask)
 {
-    (void) xargs; /* ignore set_next_goal_and_fork_task */
+    struct game_pkg *pkg = dldowncast(xtask, struct game_pkg, task);
 
     OptickAPI_NextFrame();
     BGN_EVENT;
 
-    //struct timespec t0, t1;
-    //clock_gettime(CLOCK_REALTIME, &t0);
-
-    printf("Beginning round %u\n", roundn);
-    if (++ roundn == ROUNDS) {
-        dlasync(&terminate_task);
+    printf("Beginning round %u\n", pkg->round);
+    if (++ pkg->round == NUM_ROUNDS) {
+        /*
+         * Cease game graph recursion. Determine winner and terminate.
+         */
+        pkg->terminate = (struct terminate_pkg) {
+            .task = (struct dltask) { .fn = terminate_run },
+            .winner = UINT_MAX
+        };
+        unsigned int highest_score = 0;
+        for (unsigned int i = 0; i < NUM_CONTESTANTS; ++ i) {
+            if (pkg->contestants[i].score > highest_score) {
+                pkg->contestants[i].score = highest_score;
+                pkg->terminate.winner = i;
+            }
+        }
+        dlasync(&pkg->terminate.task);
     } else {
-        /* Reset wait counter */
-        atomic_store_explicit(&set_next_goal_and_fork_task.wait, NTASKS, memory_order_relaxed);
+        /*
+         * Reset wait counter on this recursive graph
+         * TODO: dljoin
+         */
+        atomic_store(&pkg->task.wait, NUM_CONTESTANTS);
 
-        target = rand() % NTASKS;
-        for (size_t i = 0; i < NTASKS; ++ i) {
-            dlasync(&make_guess_and_advance_tasks[i].dlt);
+        /*
+         * Set new target and fork children
+         */
+        pkg->target = rand() % NUM_CONTESTANTS;
+        for (unsigned int i = 0; i < NUM_CONTESTANTS; ++ i) {
+            dlasync(&pkg->contestants[i].task);
         }
     }
-
-    //clock_gettime(CLOCK_REALTIME, &t1);
-    //unsigned long total_time_ns = (t1.tv_sec-t0.tv_sec) * 1000000000 + t1.tv_nsec-t0.tv_nsec;
-    //printf("\tset_next_goal_and_fork_async took: %luns\n", total_time_ns);
-    //printf("\tapprox. time per task: %luns\n", total_time_ns / NTASKS);
 
     END_EVENT;
 }
 
-static void
-make_guess_and_advance_async(struct dltask *xargs)
+void
+contestant_run(struct dltask *xtask)
 {
+    struct contestant_pkg *pkg = dldowncast(xtask, struct contestant_pkg, task);
+
     BGN_EVENT;
 
-    struct make_guess_and_advance_task *this = dldowncast(xargs, struct make_guess_and_advance_task, dlt);
-    unsigned int this_guess = atomic_fetch_add(&guess, 1);
-    if (this_guess == target) {
-        ++ progress[this->id];
+    unsigned int this_guess = atomic_fetch_add(&pkg->game->guess, 1);
+    if (this_guess == pkg->game->target) {
+        ++ pkg->score;
     }
 
     /*
@@ -203,8 +238,8 @@ make_guess_and_advance_async(struct dltask *xargs)
      * of waking stalled workers will cause runtimes to balloon.
      *
      * In real code this isn't an issue. :) I find 10ns+overhead is long
-     * enough for set_next_goal_and_fork_async to queue up NTASKS for
-     * the 32 hardware threads of my 3950x to fight over without too
+     * enough for set_next_goal_and_fork_async to queue up NUM_CONTESTANTS
+     * for the 32 hardware threads of my 3950x to fight over without too
      * much stalling.
      */
 #ifdef _WIN32

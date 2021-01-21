@@ -11,32 +11,30 @@
 #include <unistd.h>
 
 /* start_listen finds and binds us a free socket */
-static int start_listen(const char *port);
+int start_listen(const char *port);
 
 /*
- * accept_async blocks for a client connection then spawns
- * connection_async with the client file descriptor.
- *
- * Schedules itself recursively on success.
+ * accept blocks for a client connection then spawns connection with the
+ * client file descriptor and recursively schedules itself on success.
  */
-struct accept_task {
-    struct dltask dlt;
+struct accept_pkg {
+    struct dltask task;
     int socketfd;
 };
-static void accept_async(struct dltask *);
+void accept_run(struct dltask *);
 
 /*
- * read_async reads payload from client, performs zero validation,
- * and queues a write_async to showcast dlcontinuation().
+ * read reads payload from client, performs zero validation, and queues
+ * a write to showcast dlcontinuation().
  *
  * Out of sheer laziness, define a generic task for both read and write.
  */
-struct rw_task {
-    struct dltask dlt;
+struct rw_pkg {
+    struct dltask task;
     int clientfd;
 };
-static void read_async(struct dltask *);
-static void write_async(struct dltask *);
+void read_run(struct dltask *);
+void write_run(struct dltask *);
 
 int
 main(int argc, char** argv)
@@ -47,11 +45,14 @@ main(int argc, char** argv)
      * Transfer complete control to a Deadlock scheduler. This function
      * will return when our scheduler is terminated.
      */
-    struct accept_task accept_task = {
-        .dlt = { .fn = accept_async },
+    struct accept_pkg accept = {
+        .task = {
+            .fn = accept_run,
+            .next = &accept.task
+        },
         .socketfd = socketfd
     };
-    int result = dlmain(&accept_task.dlt, NULL, NULL);
+    int result = dlmain(&accept.task, NULL, NULL);
     if (result) perror("Error in dlmain");
 
     close(socketfd);
@@ -59,7 +60,7 @@ main(int argc, char** argv)
     return 0;
 }
 
-static int
+int
 start_listen(const char *port)
 {
     struct addrinfo hints;
@@ -105,45 +106,49 @@ start_listen(const char *port)
     return sfd;
 }
 
-static void
-accept_async(struct dltask *xargs)
+void
+accept_run(struct dltask *xtask)
 {
-    struct accept_task *args = dldowncast(xargs, struct accept_task, dlt);
+    struct accept_pkg *pkg = dldowncast(xtask, struct accept_pkg, task);
 
     struct sockaddr_in addr;
     socklen_t          addrlen = sizeof(addr);
-    int clientfd = accept(args->socketfd, (struct sockaddr *)&addr, &addrlen);
+    int clientfd = accept(pkg->socketfd, (struct sockaddr *)&addr, &addrlen);
     if (clientfd == -1) {
         perror("accept client failed");
         goto error;
     }
 
-    struct rw_task *t = malloc(sizeof *t);
-    if (!t) {
-        perror("Failed to allocate rw_task");
+    struct rw_pkg *rw = malloc(sizeof *rw);
+    if (!rw) {
+        perror("Failed to allocate rw_pkg");
         goto error;
     }
-    *t = (struct rw_task) {
-        .dlt = { .fn = read_async },
+    *rw = (struct rw_pkg) {
+        .task = { .fn = read_run },
         .clientfd = clientfd
     };
-    dlasync(&t->dlt);
+    dlasync(&rw->task);
 
-    dlasync(&args->dlt); /* Schedule this to run recursively */
+    /*
+     * Recurse
+     */
+    atomic_store(&xtask->wait, 1);
+
     return;
 
 error:
     dlterminate();
 }
 
-static void
-read_async(struct dltask *xargs)
+void
+read_run(struct dltask *xtask)
 {
-    struct rw_task *arg = dldowncast(xargs, struct rw_task, dlt);
+    struct rw_pkg *pkg = dldowncast(xtask, struct rw_pkg, task);
 
     char msg[4096];
 
-    ssize_t len = recv(arg->clientfd, msg, 4096, 0);
+    ssize_t len = recv(pkg->clientfd, msg, 4096, 0);
 
     if (len ==  0) goto close_conn; /* non-error */
     if (len == -1) {
@@ -163,21 +168,21 @@ read_async(struct dltask *xargs)
     /*
      * Totally ignore what the client has to say and return some HTML.
      */
-    arg->dlt.fn = write_async;
-    dlcontinuation(xargs, xargs);
-    dlasync(xargs);
+    pkg->task.fn = write_run;
+    dlcontinuation(xtask, xtask);
+    dlasync(xtask);
     return;
 
 close_conn:
-    (void) shutdown(arg->clientfd, SHUT_RDWR);
-    (void) close(arg->clientfd);
-    free(arg);
+    (void) shutdown(pkg->clientfd, SHUT_RDWR);
+    (void) close(pkg->clientfd);
+    free(pkg);
 }
 
-static void
-write_async(struct dltask *xargs)
+void
+write_run(struct dltask *xtask)
 {
-    struct rw_task *arg = dldowncast(xargs, struct rw_task, dlt);
+    struct rw_pkg *pkg = dldowncast(xtask, struct rw_pkg, task);
 
     char response[64];
     ssize_t len = snprintf(response, 64,
@@ -187,14 +192,14 @@ write_async(struct dltask *xargs)
         perror("Failed to construct response");
         goto close_conn;
     }
-    ssize_t written = write(arg->clientfd, response, len);
+    ssize_t written = write(pkg->clientfd, response, len);
     if (written != len) {
         perror("Failed to write to client");
     }
 
 close_conn:
-    (void) shutdown(arg->clientfd, SHUT_RDWR);
-    (void) close(arg->clientfd);
-    free(arg);
+    (void) shutdown(pkg->clientfd, SHUT_RDWR);
+    (void) close(pkg->clientfd);
+    free(pkg);
 }
 
