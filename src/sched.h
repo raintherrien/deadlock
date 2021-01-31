@@ -47,11 +47,6 @@ struct dlsched {
     struct dlworker workers[];
 };
 
-struct dlentryargs {
-    int    argc;
-    char **argv;
-};
-
 void *dlsched_alloc    (int nworkers);
 void  dlsched_destroy  (struct dlsched *);
 int   dlsched_init     (struct dlsched *, int, struct dltask *, dlwentryfn, dlwexitfn);
