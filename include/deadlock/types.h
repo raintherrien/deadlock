@@ -11,8 +11,7 @@ struct dltask;
  * 128 bytes to make use of the L2 streamer, which will prefetch the
  * line pair (second when aligned to 128B?) of a block of cachelines.
  */
-#define DEADLOCK_CLSZ    64
-/* #define DEADLOCK_CLBLKSZ (2*DEADLOCK_CLBLKSZ) */
+#define DEADLOCK_CLSZ 128
 
 /*
  * Task functions are invoked and passed a pointer to the scheduled task
@@ -30,9 +29,9 @@ typedef void(*dltaskfn)(struct dltask *);
  * scheduled.
  */
 struct dltask {
-    dltaskfn       fn;
-    struct dltask *next;
-    atomic_uint    wait;
+	dltaskfn       fn;
+	struct dltask *next;
+	atomic_uint    wait;
 };
 
 /*

@@ -9,19 +9,17 @@
  * them. Work-stealing ensues and inevitably something seg-faults. :)
  *
  * dlworker_async() runs a task asynchronously. If this worker's task
- * queue is full the task is executed immediately. Some care should be
- * taken to avoid stack overflows. TODO: See source comments about
- * _mm_pause alternative, which would not suffer from potential stack
- * overflows at the cost of latency.
+ * queue is full the task is executed immediately. Care should be taken
+ * to avoid stack overflows and livelocks, namely: assume dlworker_async
+ * will always invoke the task immediately on the stack.
  *
  * dlworker_destroy() must be called to destroy an initialized worker.
  * Termination must be signalled on the scheduler and this worker must
  * be woken from any stall state, otherwise dlworker_destroy will spin
  * forever trying to join the worker's thread.
  *
- * dlworker_init() initializes a new worker.
- * Zero is returned on success, otherwise the worker is left
- * uninitialized and:
+ * dlworker_init() initializes a new worker. Zero is returned on success,
+ * otherwise the worker is left uninitialized and:
  * EAGAIN shall be returned if the system lacks the necessary resources
  * to spawn the worker thread.
  * ENOMEM shall be returned if insufficient memory exists to initialize
@@ -31,25 +29,23 @@
 struct dlsched;
 
 struct dlworker {
-    struct dltqueue tqueue;
-    struct dlsched *sched;
-    struct dlthread thread;
-    dlwentryfn      entry;
-    dlwexitfn       exit;
-    int             index;
+	struct dltqueue tqueue;
+	struct dlsched *sched;
+	struct dlthread thread;
+	dlwentryfn      entry;
+	dlwexitfn       exit;
+	int             index;
 };
 
 void dlworker_async  (struct dlworker *, struct dltask *);
 void dlworker_destroy(struct dlworker *);
 void dlworker_join   (struct dlworker *);
-int  dlworker_init(
-    struct dlworker *w,
-    struct dlsched  *s,
-    struct dltask   *task,
-    dlwentryfn       entry,
-    dlwexitfn        exit,
-    int              index
-);
+int  dlworker_init(struct dlworker *w,
+                   struct dlsched  *s,
+                   struct dltask   *task,
+                   dlwentryfn       entry,
+                   dlwexitfn        exit,
+                   int              index);
 
 extern _Thread_local struct dlworker* dl_this_worker;
 

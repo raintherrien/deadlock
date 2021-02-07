@@ -18,69 +18,70 @@ extern _Thread_local struct dlworker *dl_this_worker;
 void
 dlasync(struct dltask *t)
 {
-    assert(dl_this_worker);
-    dlworker_async(dl_this_worker, t);
+	assert(dl_this_worker);
+	dlworker_async(dl_this_worker, t);
 }
 
 void
 dlcontinuation(struct dltask *this, struct dltask *next)
 {
-    if (this->next) {
-        next->next = this->next;
-        atomic_fetch_add_explicit(&this->next->wait, 1, memory_order_relaxed);
-    }
+	if (this->next) {
+		next->next = this->next;
+		atomic_fetch_add_explicit(&this->next->wait, 1,
+		                          memory_order_relaxed);
+	}
 }
 
 int
 dlmain(struct dltask *t, dlwentryfn wentryfn, dlwexitfn wexitfn)
 {
-    errno = 0;
-    int ncpu = dlprocessorcount();
-    if (errno) return errno;
-    return dlmainex(t, wentryfn, wexitfn, ncpu);
+	errno = 0;
+	int ncpu = dlprocessorcount();
+	if (errno) return errno;
+	return dlmainex(t, wentryfn, wexitfn, ncpu);
 }
 
 int
 dlmainex(struct dltask *t, dlwentryfn wentryfn, dlwexitfn wexitfn, int workers)
 {
-    assert(!dl_default_sched);
+	assert(!dl_default_sched);
 
-    int result = 0;
+	int result = 0;
 
-    dl_default_sched = dlsched_alloc(workers);
-    if (!dl_default_sched) {
-        result = errno;
-        goto malloc_failed;
-    }
+	dl_default_sched = dlsched_alloc(workers);
+	if (!dl_default_sched) {
+		result = errno;
+		goto malloc_failed;
+	}
 
-    result = dlsched_init(dl_default_sched, workers, t, wentryfn, wexitfn);
-    if (result) goto dlsched_init_failed;
+	result = dlsched_init(dl_default_sched, workers, t, wentryfn, wexitfn);
+	if (result) goto dlsched_init_failed;
 
-    dlsched_join(dl_default_sched);
-    dlsched_destroy(dl_default_sched);
-    free(dl_default_sched);
-    dl_default_sched = NULL;
+	dlsched_join(dl_default_sched);
+	dlsched_destroy(dl_default_sched);
+	free(dl_default_sched);
+	dl_default_sched = NULL;
 
-    return 0;
+	return 0;
 
 dlsched_init_failed:
-    free(dl_default_sched);
-    dl_default_sched = NULL;
+	free(dl_default_sched);
+	dl_default_sched = NULL;
 
 malloc_failed:
-    return errno = result;
+	return errno = result;
 }
 
 void
 dlterminate(void)
 {
-    assert(dl_this_worker);
-    dlsched_terminate(dl_this_worker->sched);
+	assert(dl_this_worker);
+	dlsched_terminate(dl_this_worker->sched);
 }
 
 int
 dlworker_index(void)
 {
-    assert(dl_this_worker);
-    return dl_this_worker->index;
+	assert(dl_this_worker);
+	return dl_this_worker->index;
 }

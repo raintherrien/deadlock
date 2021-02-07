@@ -42,12 +42,14 @@
 typedef _Atomic(struct dltask *) atomic_task_ptr;
 
 struct dltqueue {
-    _Alignas(DEADLOCK_CLSZ)
-    atomic_uint      head;
-    _Alignas(DEADLOCK_CLSZ)
-    atomic_uint      tail;
-    atomic_task_ptr *tasks;
-    unsigned int     szmask;
+	_Alignas(DEADLOCK_CLSZ)
+	atomic_uint      head;
+
+	_Alignas(DEADLOCK_CLSZ)
+	atomic_uint      tail;
+
+	atomic_task_ptr *tasks;
+	unsigned int     szmask;
 };
 
 void dltqueue_destroy(struct dltqueue *);

@@ -36,15 +36,17 @@
  * tasks.
  *
  * dlsched_terminate() signals a scheduler to terminate. All workers
- * should enter a joinable state.
+ * should enter a joinable state. Calling sched_terminate before all
+ * workers are initialized and in a running state is undefined: the
+ * application will probably hang.
  */
 
 struct dlsched {
-    struct dlwait   stall;
-    atomic_int      terminate;
-    atomic_int      wbarrier;
-    int             nworkers;
-    struct dlworker workers[];
+	struct dlwait   stall;
+	atomic_int      terminate;
+	atomic_int      wbarrier;
+	int             nworkers;
+	struct dlworker workers[];
 };
 
 void *dlsched_alloc    (int nworkers);
