@@ -123,13 +123,17 @@ dlsched_steal(struct dlsched *s, struct dltask **dst, int src)
 void
 dlsched_terminate(struct dlsched *s)
 {
-    atomic_store(&s->wbarrier, s->nworkers);
+    atomic_store(&s->wbarrier, 0);
     atomic_store(&s->terminate, 1);
 
+    int exited;
     do {
         if ((errno = dlwait_broadcast(&s->stall))) {
             perror("dlsched_terminate failed to broadcast on stall");
             exit(errno);
         }
-    } while (atomic_load(&s->wbarrier) < s->nworkers);
+        exited = atomic_load(&s->wbarrier);
+        /* if this is called from a worker thread, consider it exited */
+        if (dl_this_worker) ++ exited;
+    } while (exited < s->nworkers);
 }

@@ -33,7 +33,7 @@
  * dlsched_steal() attempts to steal a task from all workers other than
  * src (the calling worker's index), starting with tgt. Zero is returned
  * on success otherwise ENODATA is returned if there are no available
- * tasks. errno is set and returned on error.
+ * tasks.
  *
  * dlsched_terminate() signals a scheduler to terminate. All workers
  * should enter a joinable state.

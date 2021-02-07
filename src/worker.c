@@ -1,5 +1,6 @@
 #include "worker.h"
 #include "sched.h"
+#include <assert.h>
 #include <errno.h>
 #include <stdint.h>
 #include <stdio.h>
@@ -14,18 +15,14 @@ _Thread_local struct dlworker *dl_this_worker;
  * queue and attempting to steal from other work queues when the local
  * work dries up.
  *
- * dlworker_invoke() invokes a task and queues next if one exists.
+ * dlworker_invoke() invokes a task and returns that tasks' next pointer
+ * if it is ready to be invoked.
  *
  * dlworker_stall() blocks until more tasks are queued.
- *
- * dlworker_work() finds a task and executes it.
- * Zero is returned on success, otherwise no work is done and:
- * ENODATA is returned if the worker is unable to dequeue or steal work.
  */
 static void dlworker_entry(void*);
-static void dlworker_invoke(struct dlworker *, struct dltask *);
+static struct dltask *dlworker_invoke(struct dltask *);
 static void dlworker_stall (struct dlworker *);
-static int  dlworker_work  (struct dlworker *);
 
 void
 dlworker_async(struct dlworker *w, struct dltask *t)
@@ -35,20 +32,22 @@ dlworker_async(struct dlworker *w, struct dltask *t)
      * no space, execute this task immediately. Alternatively we could
      * _mm_pause(). TODO: Benchmark
      */
-    switch (dltqueue_push(&w->tqueue, t)) {
-    case 0: {
-        int result = dlwait_signal(&w->sched->stall);
-        if (result) {
-            errno = result;
-            perror("dlworker_async failed to signal stall");
-            exit(errno);
+    do {
+        switch (dltqueue_push(&w->tqueue, t)) {
+        case 0: {
+            int result = dlwait_signal(&w->sched->stall);
+            if (result) {
+                errno = result;
+                perror("dlworker_async failed to signal stall");
+                exit(errno);
+            }
+            return;
         }
-        break;
-    }
-    case ENOBUFS:
-        dlworker_invoke(w, t);
-        break;
-    }
+        case ENOBUFS:
+            t = dlworker_invoke(t);
+            break;
+        }
+    } while (t);
 }
 
 void
@@ -120,29 +119,43 @@ dlworker_entry(void *xworker)
 
     /* Synchronize all workers before they start potentially stealing */
     atomic_fetch_sub(&w->sched->wbarrier, 1);
-    while(atomic_load(&w->sched->wbarrier) > 0) {
-        /* Short-circuit if terminate is called, not calling exit */
-        if (atomic_load(&w->sched->terminate)) {
-            goto terminate;
-        }
+    while(atomic_load(&w->sched->wbarrier) > 0 &&
+          !atomic_load(&w->sched->terminate))
+    {
         dlthread_yield();
     }
 
     /* Work loop */
-    size_t stall_count = 0;
+    struct dltask *t = NULL;
     while (!atomic_load_explicit(&w->sched->terminate,
               memory_order_relaxed))
     {
-        if (dlworker_work(w) != ENODATA) {
-            stall_count = 0;
-        } else {
-            if (++ stall_count > 16) {
-                dlworker_stall(w);
-                stall_count = 0;
-            } else {
-                dlthread_yield();
-            }
+        if (t) {
+            invoke:
+            t = dlworker_invoke(t);
+            continue;
         }
+
+        /* take local task */
+        take: ;
+        int rc = dltqueue_take(&w->tqueue, &t);
+        if (rc == EAGAIN) {
+            _mm_pause();
+            goto take;
+        } else if (rc == 0) {
+            goto invoke;
+        }
+        assert(rc == ENODATA);
+
+        /* attempt to steal 16 times before stalling */
+        for (size_t sc = 0; sc < 16; ++ sc) {
+            int rc = dlsched_steal(w->sched, &t, w->index);
+            if (rc == 0) goto invoke;
+            assert(rc == ENODATA);
+            dlthread_yield();
+        }
+        t = NULL;
+        dlworker_stall(w);
     }
 
     /* Invoke the on_exit lifetime callback */
@@ -152,61 +165,28 @@ dlworker_entry(void *xworker)
     dl_this_worker = NULL;
     /* Synchronize workers until they're all joinable */
     atomic_fetch_add(&w->sched->wbarrier, 1);
-
-terminate:
-    return;
 }
 
-static void
-dlworker_invoke(struct dlworker *w, struct dltask *t)
+static struct dltask *
+dlworker_invoke(struct dltask *t)
 {
-    struct dltask *next = t->next;
-
     (*t->fn)(t);
-
-    if (next != NULL && 1 == atomic_fetch_sub_explicit(&next->wait, 1,
-                               memory_order_release))
+    if (t->next != NULL &&
+        atomic_fetch_sub_explicit(&t->next->wait, 1,
+          memory_order_release) == 1)
     {
-        dlworker_async(w, next);
+        return t->next;
     }
+    return NULL;
 }
 
 static void
 dlworker_stall(struct dlworker *w)
 {
     int pr = dlwait_wait(&w->sched->stall);
-    if (pr)
-    {
+    if (pr) {
         errno = pr;
         perror("dlworker_stall failed to dlwait_wait on stall");
         exit(errno);
     }
-}
-
-static int
-dlworker_work(struct dlworker *w)
-{
-    struct dltask *t = NULL;
-
-    take: ;
-    int rc = dltqueue_take(&w->tqueue, &t);
-    if (rc == EAGAIN) {
-        _mm_pause();
-        goto take;
-    }
-    switch (rc) {
-    case 0:       goto invoke;
-    case ENODATA: goto steal;
-    }
-
-steal:
-    if (dlsched_steal(w->sched, &t, w->index)
-          == ENODATA)
-    {
-        return ENODATA;
-    }
-
-invoke:
-    dlworker_invoke(w, t);
-    return 0;
 }
