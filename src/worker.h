@@ -37,12 +37,16 @@ struct dlworker {
 	int             index;
 };
 
-void dlworker_async  (struct dlworker *, struct dltask *);
+void dlworker_async  (struct dlworker *, dltask *);
 void dlworker_destroy(struct dlworker *);
 void dlworker_join   (struct dlworker *);
-int  dlworker_init   (struct dlworker *, struct dlsched *, struct dltask *,
+int  dlworker_init   (struct dlworker *, struct dlsched *, dltask *,
                       dlwentryfn, dlwexitfn, int index);
 
-extern _Thread_local struct dlworker* dl_this_worker;
+/*
+ * dl_this_worker is defined in worker.c and is the thread local superblock of
+ * information about this thread's worker.
+ */
+extern _Thread_local struct dlworker *dl_this_worker;
 
 #endif /* DEADLOCK_WORKER_H_ */

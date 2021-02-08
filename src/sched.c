@@ -37,10 +37,10 @@ dlsched_destroy(struct dlsched *s)
 
 int
 dlsched_init(struct dlsched *s,
-             int             nworkers,
-             struct dltask  *task,
-             dlwentryfn      entryfn,
-             dlwexitfn       exitfn)
+             int nworkers,
+             dltask *task,
+             dlwentryfn entryfn,
+             dlwexitfn exitfn)
 {
 	if (task == NULL) return errno = EINVAL;
 
@@ -91,7 +91,7 @@ dlsched_join(struct dlsched *s)
  * testing required...
  */
 int
-dlsched_steal(struct dlsched *s, struct dltask **dst, int src)
+dlsched_steal(struct dlsched *s, dltask **dst, int src)
 {
 	int tgt = 0;
 	for (int n = 0; n < s->nworkers; ++ n) {

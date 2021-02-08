@@ -49,10 +49,10 @@ struct dlsched {
 
 void *dlsched_alloc    (int nworkers);
 void  dlsched_destroy  (struct dlsched *);
-int   dlsched_init     (struct dlsched *, int nworkers, struct dltask *,
+int   dlsched_init     (struct dlsched *, int nworkers, dltask *,
                         dlwentryfn, dlwexitfn);
 void  dlsched_join     (struct dlsched *);
-int   dlsched_steal    (struct dlsched *, struct dltask **, int src);
+int   dlsched_steal    (struct dlsched *, dltask **, int src);
 void  dlsched_terminate(struct dlsched *);
 
 #endif /* DEADLOCK_SCHED_H_ */

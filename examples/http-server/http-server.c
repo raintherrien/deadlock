@@ -1,4 +1,4 @@
-#include "deadlock/async.h"
+#include "deadlock/dl.h"
 
 #include <errno.h>
 #include <stdio.h>
@@ -18,10 +18,10 @@ int start_listen(const char *port);
  * client file descriptor and recursively schedules itself on success.
  */
 struct accept_pkg {
-	struct dltask task;
+	dltask task;
 	int socketfd;
 };
-void accept_run(struct dltask *);
+void accept_run(dltask *);
 
 /*
  * read reads payload from client, performs zero validation, and queues
@@ -30,11 +30,11 @@ void accept_run(struct dltask *);
  * Out of sheer laziness, define a generic task for both read and write.
  */
 struct rw_pkg {
-	struct dltask task;
+	dltask task;
 	int clientfd;
 };
-void read_run(struct dltask *);
-void write_run(struct dltask *);
+void read_run(dltask *);
+void write_run(dltask *);
 
 int
 main(int argc, char** argv)
@@ -46,10 +46,7 @@ main(int argc, char** argv)
 	 * function will return when our scheduler is terminated.
 	 */
 	struct accept_pkg accept = {
-		.task = {
-			.fn = accept_run,
-			.next = &accept.task
-		},
+		.task = DL_TASK_INIT(accept_run),
 		.socketfd = socketfd
 	};
 	int result = dlmain(&accept.task, NULL, NULL);
@@ -109,9 +106,9 @@ start_listen(const char *port)
 }
 
 void
-accept_run(struct dltask *xtask)
+accept_run(dltask *xtask)
 {
-	struct accept_pkg *pkg = dldowncast(xtask, struct accept_pkg, task);
+	struct accept_pkg *pkg = DL_TASK_DOWNCAST(xtask, struct accept_pkg, task);
 
 	struct sockaddr_in addr;
 	socklen_t          addrlen = sizeof(addr);
@@ -127,13 +124,12 @@ accept_run(struct dltask *xtask)
 		goto error;
 	}
 	*rw = (struct rw_pkg) {
-		.task = { .fn = read_run },
+		.task = DL_TASK_INIT(read_run),
 		.clientfd = clientfd
 	};
-	dlasync(&rw->task);
-
-	/* Recurse */
-	atomic_store(&xtask->wait, 1);
+	/* Recursive! */
+	dlasync(&rw->task, NULL);
+	dlasync(xtask, NULL);
 
 	return;
 
@@ -142,9 +138,9 @@ error:
 }
 
 void
-read_run(struct dltask *xtask)
+read_run(dltask *xtask)
 {
-	struct rw_pkg *pkg = dldowncast(xtask, struct rw_pkg, task);
+	struct rw_pkg *pkg = DL_TASK_DOWNCAST(xtask, struct rw_pkg, task);
 
 	char msg[4096];
 
@@ -168,9 +164,8 @@ read_run(struct dltask *xtask)
 	/*
 	 * Totally ignore what the client has to say and return some HTML.
 	 */
-	pkg->task.fn = write_run;
-	dlcontinuation(xtask, xtask);
-	dlasync(xtask);
+	dlcontinuation(xtask, write_run);
+	dlasync(xtask, NULL);
 	return;
 
 close_conn:
@@ -180,9 +175,9 @@ close_conn:
 }
 
 void
-write_run(struct dltask *xtask)
+write_run(dltask *xtask)
 {
-	struct rw_pkg *pkg = dldowncast(xtask, struct rw_pkg, task);
+	struct rw_pkg *pkg = DL_TASK_DOWNCAST(xtask, struct rw_pkg, task);
 
 	char response[64];
 	ssize_t len = snprintf(response, 64,

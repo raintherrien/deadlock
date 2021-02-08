@@ -1,4 +1,4 @@
-#include "deadlock/async.h"
+#include "deadlock/dl.h"
 #include "optick_capi.h"
 #include <errno.h>
 #include <limits.h>
@@ -38,33 +38,33 @@ struct terminate_pkg;
  * Announces a winner, terminates the scheduler, and dumps our capture.
  */
 struct terminate_pkg {
-	struct dltask task;
+	dltask task;
 	unsigned int  winner;
 };
-void terminate_run(struct dltask *);
+void terminate_run(dltask *);
 
 /*
  * Performs a guess.
  */
 struct contestant_pkg {
-	struct dltask    task;
+	dltask    task;
 	struct game_pkg *game;
 	unsigned int     score;
 };
-void contestant_run(struct dltask *);
+void contestant_run(dltask *);
 
 /*
  * Orchestrates the whole mess.
  */
 struct game_pkg {
-	struct dltask         task;
+	dltask         task;
 	atomic_uint           guess;
 	unsigned int          target;
 	unsigned int          round;
 	struct terminate_pkg  terminate;
 	struct contestant_pkg contestants[];
 };
-void game_run(struct dltask *);
+void game_run(dltask *);
 
 /*
  * Helper macros to scope Optick events
@@ -117,10 +117,7 @@ main(int argc, char **argv)
 		return EXIT_FAILURE;
 	}
 	*game = (struct game_pkg) {
-		.task = (struct dltask) {
-			.fn = game_run,
-			.next = &game->task
-		},
+		.task = DL_TASK_INIT(game_run),
 		.round = 0
 	};
 
@@ -129,10 +126,7 @@ main(int argc, char **argv)
 	 */
 	for (unsigned int i = 0; i < NUM_CONTESTANTS; ++ i) {
 		game->contestants[i] = (struct contestant_pkg) {
-			.task = (struct dltask) {
-				.fn = contestant_run,
-				.next = &game->task
-			},
+			.task = DL_TASK_INIT(contestant_run),
 			.game = game,
 			.score = 0
 		};
@@ -169,9 +163,9 @@ worker_entry(int id)
 }
 
 void
-terminate_run(struct dltask *xtask)
+terminate_run(dltask *xtask)
 {
-	struct terminate_pkg *pkg = dldowncast(xtask, struct terminate_pkg, task);
+	struct terminate_pkg *pkg = DL_TASK_DOWNCAST(xtask, struct terminate_pkg, task);
 	printf("Congratulations contestant %u!\n", pkg->winner);
 	const char *optfn = "fork-join";
 	OptickAPI_StopCapture(optfn, (uint16_t)strlen(optfn));
@@ -179,9 +173,9 @@ terminate_run(struct dltask *xtask)
 }
 
 void
-game_run(struct dltask *xtask)
+game_run(dltask *xtask)
 {
-	struct game_pkg *pkg = dldowncast(xtask, struct game_pkg, task);
+	struct game_pkg *pkg = DL_TASK_DOWNCAST(xtask, struct game_pkg, task);
 
 	OptickAPI_NextFrame();
 	BGN_EVENT;
@@ -192,7 +186,7 @@ game_run(struct dltask *xtask)
 		 * Cease game graph recursion. Determine winner and terminate.
 		 */
 		pkg->terminate = (struct terminate_pkg) {
-			.task = (struct dltask) { .fn = terminate_run },
+			.task = DL_TASK_INIT(terminate_run),
 			.winner = UINT_MAX
 		};
 		unsigned int highest_score = 0;
@@ -202,20 +196,19 @@ game_run(struct dltask *xtask)
 				pkg->terminate.winner = i;
 			}
 		}
-		dlasync(&pkg->terminate.task);
+		dlasync(&pkg->terminate.task, NULL);
 	} else {
 		/*
 		 * Reset wait counter on this recursive graph
-		 * TODO: dljoin
 		 */
-		atomic_store(&pkg->task.wait, NUM_CONTESTANTS);
+		dldefer(xtask, NUM_CONTESTANTS);
 
 		/*
 		 * Set new target and fork children
 		 */
 		pkg->target = rand() % NUM_CONTESTANTS;
 		for (unsigned int i = 0; i < NUM_CONTESTANTS; ++ i) {
-			dlasync(&pkg->contestants[i].task);
+			dlasync(&pkg->contestants[i].task, &pkg->task);
 		}
 	}
 
@@ -223,9 +216,9 @@ game_run(struct dltask *xtask)
 }
 
 void
-contestant_run(struct dltask *xtask)
+contestant_run(dltask *xtask)
 {
-	struct contestant_pkg *pkg = dldowncast(xtask, struct contestant_pkg, task);
+	struct contestant_pkg *pkg = DL_TASK_DOWNCAST(xtask, struct contestant_pkg, task);
 
 	BGN_EVENT;
 

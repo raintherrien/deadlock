@@ -19,12 +19,12 @@ _Thread_local struct dlworker *dl_this_worker;
  *
  * dlworker_stall() blocks until more tasks are queued.
  */
-static void           dlworker_entry (void*);
-static struct dltask *dlworker_invoke(struct dltask *);
-static void           dlworker_stall (struct dlworker *);
+static void    dlworker_entry (void*);
+static dltask *dlworker_invoke(dltask *);
+static void    dlworker_stall (struct dlworker *);
 
 void
-dlworker_async(struct dlworker *w, struct dltask *t)
+dlworker_async(struct dlworker *w, dltask *t)
 {
 	do {
 		/*
@@ -61,7 +61,7 @@ dlworker_join(struct dlworker *w)
 }
 
 int
-dlworker_init(struct dlworker *w, struct dlsched *s, struct dltask *task,
+dlworker_init(struct dlworker *w, struct dlsched *s, dltask *task,
               dlwentryfn entry, dlwexitfn exit, int index)
 {
 	int result = 0;
@@ -115,7 +115,7 @@ dlworker_entry(void *xworker)
 	}
 
 	/* Work loop */
-	struct dltask *t = NULL;
+	dltask *t = NULL;
 	while (!atomic_load_explicit(&w->sched->terminate,
 	          memory_order_relaxed))
 	{
@@ -154,15 +154,16 @@ dlworker_entry(void *xworker)
 	atomic_fetch_add(&w->sched->wbarrier, 1);
 }
 
-static struct dltask *
-dlworker_invoke(struct dltask *t)
+static dltask *
+dlworker_invoke(dltask *t)
 {
-	t->fn(t);
-	if (t->next != NULL &&
-	    1 == atomic_fetch_sub_explicit(&t->next->wait, 1,
+	dltask *next = t->next_;
+	t->fn_(t);
+	if (next != NULL &&
+	    1 == atomic_fetch_sub_explicit(&next->wait_, 1,
 	                                   memory_order_release))
 	{
-		return t->next;
+		return next;
 	}
 	return NULL;
 }
