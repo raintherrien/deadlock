@@ -8,9 +8,6 @@
 
 /*
  * dl_default_sched is a singleton used by dlmain() and dlterminate().
- *
- * dl_this_worker is defined in worker.c and is used by dlasyncsz()
- * and dldefersz() to add work to the current worker queue.
  */
 static               struct dlsched  *dl_default_sched = NULL;
 extern _Thread_local struct dlworker *dl_this_worker;

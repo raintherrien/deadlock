@@ -10,13 +10,12 @@
 _Thread_local struct dlworker *dl_this_worker;
 
 /*
- * dlworker_entry() is the main loop of each worker thread. It spins
- * until the scheduler signals termination, popping work from the local
- * queue and attempting to steal from other work queues when the local
- * work dries up.
+ * dlworker_entry() is the main loop of each worker thread. It spins until the
+ * scheduler signals termination, popping work from the local queue and
+ * attempting to steal from other work queues when the local work dries up.
  *
- * dlworker_invoke() invokes a task and returns that tasks' next pointer
- * if it is ready to be invoked.
+ * dlworker_invoke() invokes a task and returns that tasks' next pointer if it
+ * is ready to be invoked.
  *
  * dlworker_stall() blocks until more tasks are queued.
  */
@@ -27,24 +26,21 @@ static void           dlworker_stall (struct dlworker *);
 void
 dlworker_async(struct dlworker *w, struct dltask *t)
 {
-	/*
-	 * dltqueue_push shall only return success or ENOBUFS. If there
-	 * is no space, execute this task immediately.
-	 */
 	do {
+		/*
+		 * dltqueue_push shall only return success or ENOBUFS.
+		 * If there is no space execute this task immediately.
+		 */
 		switch (dltqueue_push(&w->tqueue, t)) {
 		case 0: {
 			int result = dlwait_signal(&w->sched->stall);
-			if (result) {
-				errno = result;
-				perror("dlworker_async failed to signal stall");
-				exit(errno);
-			}
-			return;
+			if (result == 0) return;
+			errno = result;
+			perror("dlworker_async failed to signal stall");
+			exit(errno);
 		}
 		case ENOBUFS:
 			t = dlworker_invoke(t);
-			break;
 		}
 	} while (t);
 }
@@ -65,12 +61,8 @@ dlworker_join(struct dlworker *w)
 }
 
 int
-dlworker_init(struct dlworker *w,
-              struct dlsched  *s,
-              struct dltask   *task,
-              dlwentryfn       entry,
-              dlwexitfn        exit,
-              int              index)
+dlworker_init(struct dlworker *w, struct dlsched *s, struct dltask *task,
+              dlwentryfn entry, dlwexitfn exit, int index)
 {
 	int result = 0;
 
@@ -111,7 +103,7 @@ dlworker_entry(void *xworker)
 	/* Thread local pointer to this worker used by async etc. */
 	dl_this_worker = w;
 
-	/* Invoke the on_entry lifetime callback */
+	/* Invoke the entry callback */
 	if (w->entry) w->entry(w->index);
 
 	/* Synchronize all workers before they start stealing */
@@ -155,11 +147,9 @@ dlworker_entry(void *xworker)
 		dlworker_stall(w);
 	}
 
-	/* Invoke the on_exit lifetime callback */
+	/* Invoke the exit lifetime callback */
 	if (w->exit) w->exit(w->index);
 
-	/* Clean up thread local state */
-	dl_this_worker = NULL;
 	/* Synchronize workers until they're all joinable */
 	atomic_fetch_add(&w->sched->wbarrier, 1);
 }
@@ -167,9 +157,10 @@ dlworker_entry(void *xworker)
 static struct dltask *
 dlworker_invoke(struct dltask *t)
 {
-	(*t->fn)(t);
+	t->fn(t);
 	if (t->next != NULL &&
-	    atomic_fetch_sub_explicit(&t->next->wait, 1, memory_order_release) == 1)
+	    1 == atomic_fetch_sub_explicit(&t->next->wait, 1,
+	                                   memory_order_release))
 	{
 		return t->next;
 	}

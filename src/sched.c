@@ -55,13 +55,8 @@ dlsched_init(struct dlsched *s,
 
 	int w = 0;
 	for (; w < nworkers; ++ w) {
-		if (w == 0) {
-			result = dlworker_init(s->workers + w, s, task,
-			                       entryfn, exitfn, w);
-		} else {
-			result = dlworker_init(s->workers + w, s, NULL,
-			                       entryfn, exitfn, w);
-		}
+		result = dlworker_init(s->workers + w, s, !w ? task : NULL,
+		                       entryfn, exitfn, w);
 		if (result) goto dlworker_init_failed;
 	}
 
@@ -91,9 +86,9 @@ dlsched_join(struct dlsched *s)
 }
 
 /*
- * Literature dictates a random distribution of victims is more
- * performant than a linear search, but I just can't beat this
- * performance! Further testing required...
+ * Literature dictates a random distribution of victims is more performant
+ * than a linear search, but I just can't beat this performance! TODO: Further
+ * testing required...
  */
 int
 dlsched_steal(struct dlsched *s, struct dltask **dst, int src)
@@ -132,7 +127,7 @@ dlsched_terminate(struct dlsched *s)
 			exit(errno);
 		}
 		exited = atomic_load(&s->wbarrier);
-		/* if this is called from a worker thread, consider it exited */
+		/* if this is a worker thread consider it exited */
 		if (dl_this_worker) ++ exited;
 	} while (exited < s->nworkers);
 }

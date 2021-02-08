@@ -41,7 +41,8 @@ dltqueue_push(struct dltqueue *q, struct dltask *tsk)
 		/* No free space */
 		return ENOBUFS;
 	}
-	atomic_store_explicit(&q->tasks[h & q->szmask], tsk, memory_order_relaxed);
+	atomic_store_explicit(&q->tasks[h & q->szmask], tsk,
+	                      memory_order_relaxed);
 	atomic_thread_fence(memory_order_release);
 	atomic_store_explicit(&q->head, h + 1, memory_order_relaxed);
 	return 0;
@@ -72,17 +73,16 @@ dltqueue_steal(struct dltqueue *q, struct dltask **dst)
 }
 
 /*
- * I believe the implementation of take in Correct and efficient work-
- * stealing for weak memory models is bugged. If we're dealing with
- * unsigned indices and the queue is empty, bottom - 1 could potentially
- * wrap around to SIZE_MAX which would be larger than tail. This doesn't
- * matter if we're just fetching and returning a NULL pointer from our
- * buffer, but it does matter when we want an accurate error code
- * returned!
+ * I believe the implementation of take in Correct and efficient work-stealing
+ * for weak memory models is bugged. If we're dealing with unsigned indices
+ * and the queue is empty, bottom - 1 could potentially wrap around to
+ * SIZE_MAX which would be larger than tail. This doesn't matter if we're just
+ * fetching and returning a NULL pointer from our buffer, but it does matter
+ * when we want an accurate error code returned!
  * A solution is to perform an early test for emptiness.
  *
- * TODO: It would be interesting to see how other people have
- * implemented this, I'm probably wrong!
+ * TODO: It would be interesting to see how other people have implemented this
+ * I'm probably wrong!
  */
 int
 dltqueue_take(struct dltqueue *q, struct dltask **dst)
@@ -113,7 +113,8 @@ dltqueue_take(struct dltqueue *q, struct dltask **dst)
 				*dst = NULL;
 				rc = EAGAIN;
 			}
-			atomic_store_explicit(&q->head, h + 1, memory_order_relaxed);
+			atomic_store_explicit(&q->head, h + 1,
+			                      memory_order_relaxed);
 		}
 	} else {
 		/* Empty */
