@@ -161,12 +161,9 @@ main(int argc, char **argv)
 void
 worker_entry(int id)
 {
-	char threadname[16] = { '\0' };
-#ifdef _WIN32
-	sscanf_s(threadname, "Worker %d", &id);
-#else
-	sscanf(threadname, "Worker %d", &id);
-#endif
+	const size_t threadname_len = 16;
+	char threadname[threadname_len];
+	snprintf(threadname, threadname_len, "Worker %d", id);
 	OptickAPI_RegisterThread(threadname, (uint16_t)strlen(threadname));
 }
 

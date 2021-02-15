@@ -226,10 +226,17 @@ dlworker_invoke(struct dlworker *w, dltask *t)
 	}
 #endif
 
-	if (next && 1 == atomic_fetch_sub_explicit(&next->wait_, 1,
-	                                           memory_order_release))
-	{
-		return next;
+	if (next) {
+		unsigned wait = atomic_fetch_sub_explicit(&next->wait_, 1,
+		                                          memory_order_release);
+		switch (wait) {
+		case 0:
+			errno = EINVAL;
+			perror("dlworker_invoke next task invalid wait count");
+			exit(errno);
+		case 1:
+			return next;
+		}
 	}
 	return NULL;
 }
