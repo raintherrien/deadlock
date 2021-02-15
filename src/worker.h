@@ -1,6 +1,8 @@
 #ifndef DEADLOCK_WORKER_H_
 #define DEADLOCK_WORKER_H_
 
+#include "deadlock/graph.h"
+
 #include "thread.h"
 #include "tqueue.h"
 
@@ -29,12 +31,23 @@
 struct dlsched;
 
 struct dlworker {
-	struct dltqueue tqueue;
-	struct dlsched *sched;
-	struct dlthread thread;
-	dlwentryfn      entry;
-	dlwexitfn       exit;
-	int             index;
+	struct dltqueue  tqueue;
+	struct dlsched  *sched;
+	struct dlthread  thread;
+	dlwentryfn       entry;
+	dlwexitfn        exit;
+	int              index;
+
+	/*
+	 * When graphing it's useful to store information about the currently
+	 * executing task in this threads worker struct. This eliminates
+	 * needless argument passing.
+	 */
+#if DEADLOCK_GRAPH_EXPORT
+	struct dlgraph_node current_node;
+	struct dlgraph *current_graph;
+	unsigned long   invoked_task_id;
+#endif
 };
 
 void dlworker_async  (struct dlworker *, dltask *);

@@ -21,7 +21,7 @@ struct accept_pkg {
 	dltask task;
 	int socketfd;
 };
-void accept_run(dltask *);
+static DL_TASK_DECL(accept_run);
 
 /*
  * read reads payload from client, performs zero validation, and queues
@@ -33,8 +33,8 @@ struct rw_pkg {
 	dltask task;
 	int clientfd;
 };
-void read_run(dltask *);
-void write_run(dltask *);
+static DL_TASK_DECL(read_run);
+static DL_TASK_DECL(write_run);
 
 int
 main(int argc, char** argv)
@@ -105,10 +105,9 @@ start_listen(const char *port)
 	return sfd;
 }
 
-void
-accept_run(dltask *xtask)
+static DL_TASK_DECL(accept_run)
 {
-	struct accept_pkg *pkg = DL_TASK_DOWNCAST(xtask, struct accept_pkg, task);
+	DL_TASK_ENTRY(struct accept_pkg, pkg, task);
 
 	struct sockaddr_in addr;
 	socklen_t          addrlen = sizeof(addr);
@@ -127,9 +126,9 @@ accept_run(dltask *xtask)
 		.task = DL_TASK_INIT(read_run),
 		.clientfd = clientfd
 	};
-	/* Recursive! */
-	dlasync(&rw->task, NULL);
-	dlasync(xtask, NULL);
+
+	dlasync(&rw->task);
+	dlasync(&pkg->task); /* Recursive! With no termination :) have fun! */
 
 	return;
 
@@ -137,10 +136,9 @@ error:
 	dlterminate();
 }
 
-void
-read_run(dltask *xtask)
+static DL_TASK_DECL(read_run)
 {
-	struct rw_pkg *pkg = DL_TASK_DOWNCAST(xtask, struct rw_pkg, task);
+	DL_TASK_ENTRY(struct rw_pkg, pkg, task);
 
 	char msg[4096];
 
@@ -164,8 +162,8 @@ read_run(dltask *xtask)
 	/*
 	 * Totally ignore what the client has to say and return some HTML.
 	 */
-	dlcontinuation(xtask, write_run);
-	dlasync(xtask, NULL);
+	dlcontinuation(&pkg->task, write_run);
+	dlasync(&pkg->task);
 	return;
 
 close_conn:
@@ -174,10 +172,9 @@ close_conn:
 	free(pkg);
 }
 
-void
-write_run(dltask *xtask)
+static DL_TASK_DECL(write_run)
 {
-	struct rw_pkg *pkg = DL_TASK_DOWNCAST(xtask, struct rw_pkg, task);
+	DL_TASK_ENTRY(struct rw_pkg, pkg, task);
 
 	char response[64];
 	ssize_t len = snprintf(response, 64,

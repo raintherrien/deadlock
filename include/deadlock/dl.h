@@ -1,15 +1,6 @@
 #ifndef DEADLOCK_DL_H_
 #define DEADLOCK_DL_H_
 
-#include "deadlock/internal.h"
-
-/*
- * Intel 64 and IA-32 references manuals instruct you to align memory to 128
- * bytes to make use of the L2 streamer, which will prefetch the line pair of
- * a block of cachelines.
- */
-#define DEADLOCK_CLSZ 128
-
 /*
  * dltask should be treated as an opaque type by client code and only
  * manipulated by this public API. See internal.h for further explanation.
@@ -20,9 +11,76 @@ typedef struct dltask_ dltask;
  * Each dltask must be assigned a function to invoke upon execution. This
  * function is passed the dltask object, from which the outer task object may
  * be retrieved by DL_TASK_DOWNCAST().
- * TODO: This is done automatically by DL_TASK_ENTRY()
+ *
+ * Rather than declare or define dltaskfn directly client code should use
+ * DL_TASK_DECL() and DL_TASK_ENTRY() to avoid breaking changes.
  */
-typedef void(*dltaskfn)(dltask *);
+typedef void(*dltaskfn)(void *worker, dltask *);
+
+/*
+ * dlasync() schedules a task to execute on the current task scheduler. Must
+ * be called from a worker thread because it identifies the current task
+ * scheduler from a thread local superblock.
+ *
+ * dlcontinuation() should be passed the current task and marks it as
+ * incomplete when this invocation completes. Instead the function associated
+ * with this task is updated and any task depending on this task's completion
+ * is not invoked until this task is invoked next.
+ * Typically dlcontinuation is used by a subgraph which forks its own children
+ * using dlasync that join back to this task using dldefer. By doing this you
+ * can emulate SBRM by having a "create" and "destroy" function execute on the
+ * same task object and suspend any dependent tasks set by the caller until
+ * any amount of work is completed and the continuation is complete.
+ *
+ * dlnext() creates a dependency between a task and its child. This function
+ * must be called in concert with dlwait() to increment the wait counter of
+ * the child task. dlnext() can be called to associate a task with multiple
+ * parents but a task can have only one child.
+ *
+ * dlwait() increments the number of dependencies on a task. This should be
+ * equal to the number of dlasync invocations this task is passed to.
+ */
+void dlasync(dltask *task);
+void dlcontinuation(dltask *task, dltaskfn continuefn);
+void dlnext(dltask *task, dltask *next);
+void dlwait(dltask *task, unsigned wait);
+
+/*
+ * DL_TASK_INIT is a function-like macro which returns an initialized dltask.
+ * A task is in an undefined state unless initialized with DL_TASK_INIT.
+ */
+#if 0
+#define DL_TASK_INIT(fn)
+#endif
+
+/*
+ * DL_TASK_DECL should be used to declare and define dltaskfn functions. This
+ * really does nothing except obscure the return type and give the dltask arg
+ * a consistent name for DL_TASK_ENTRY to work with, which is a much more
+ * important macro.
+ *
+ * Example dltaskfn declaration:
+ * 	struct some_task_pkg { dltask dlt; ... };
+ * 	static DL_TASK_DECL(some_task_function); // forward declare
+ * 	...
+ * 	static DL_TASK_DECL(some_task_function) {
+ * 		DL_TASK_ENTRY(struct some_task_pkg, pkg, dlt);
+ * 		...
+ * 	}
+ */
+#define DL_TASK_DECL(taskname) void taskname(void *dlw_param, dltask *dlt_param)
+
+/*
+ * DL_TASK_ENTRY downcasts the dltask arg to a typed structure and performs
+ * static initialization of this task, registering it globally and storing
+ * info such as file, line, function name, as well as dynamic registration of
+ * this particular invocation (node in a task graph).
+ *
+ * See DL_TASK_DECL() for usage.
+ */
+#if 0
+#define DL_TASK_ENTRY(outer_type, var, memb)
+#endif
 
 /*
  * dlwentryfn and dlwexitfn are optional pointers passed to a scheduler upon
@@ -32,9 +90,28 @@ typedef void(*dltaskfn)(dltask *);
 typedef void (*dlwentryfn)(int worker_index);
 typedef void (*dlwexitfn) (int worker_index);
 
+
+/*
+ * dlmain() and dlmainex() initialize the default task scheduler, passing a
+ * root task to execute, and block until termination is signalled.
+ * Zero is returned on success, otherwise errno is set and returned.
+ * Either way the default scheduler is left uninitialized once this function
+ * returns.
+ *
+ * dlterminate() signals the current task scheduler to terminate. Like
+ * dlasync() this must be called from a worker thread.
+ *
+ * dlworker_index() returns the index of this worker thread.
+ */
+int dlmain(dltask *, dlwentryfn, dlwexitfn);
+int dlmainex(dltask *, dlwentryfn, dlwexitfn, int workers);
+void dlterminate(void);
+int dlworker_index(void);
+
 /*
  * DL_TASK_DOWNCAST() returns a pointer to the structure containing a dltask.
  * This should be used within a dltaskfn to retrieve the actual task object.
+ * You probably don't need this and should use DL_TASK_ENTRY() instead.
  *
  * For example the following downcasts a dltask pointer to its container:
  * 	struct container_pkg {
@@ -55,50 +132,12 @@ typedef void (*dlwexitfn) (int worker_index);
 	((T *)((char *)(1 ? (ptr) : &((T *)0)->memb) - offsetof(T, memb)))
 
 /*
- * DL_TASK_INIT is a function-like macro which evaluates to a dltask. This
- * macro performs additional bookkeeping is profiling is enabled.
+ * Intel 64 and IA-32 references manuals instruct you to align memory to 128
+ * bytes to make use of the L2 streamer, which will prefetch the line pair of
+ * a block of cachelines.
  */
-#if 0
-#define DL_TASK_INIT(fn)
-#endif
+#define DEADLOCK_CLSZ 128
 
-/*
- * dlasync() schedules a task to execute on the current task scheduler. Must
- * be called from a worker thread because it identifies the current task
- * scheduler from a thread local superblock. next is an optional task which
- * depends on this task's completion before executing.
- *
- * dlcontinuation() should be passed the current task and marks it as
- * incomplete when this invocation completes. Instead the function associated
- * with this task is updated and any task depending on this task's completion
- * is not invoked until this task is invoked next.
- * Typically dlcontinuation is used by a subgraph which forks its own children
- * using dlasync that join back to this task using dldefer. By doing this you
- * can emulate SBRM by having a "create" and "destroy" function execute on the
- * same task object and suspend any dependent tasks set by the caller until
- * any amount of work is completed and the continuation is complete.
- *
- * dldefer() increments the number of dependencies on a task. This should be
- * equal to the number of dlasync invocations this task is passed to.
- *
- * dlmain() and dlmainex() initialize the default task scheduler, passing a
- * root task to execute, and block until termination is signalled.
- * Zero is returned on success, otherwise errno is set and returned.
- * Either way the default scheduler is left uninitialized once this function
- * returns.
- *
- * dlterminate() signals the current task scheduler to terminate. Like
- * dlasync() this must be called from a worker thread.
- *
- * dlworker_index() returns the index of this worker thread.
- */
-
-void   dlasync       (dltask *task, dltask *next);
-void   dlcontinuation(dltask *task, dltaskfn continuefn);
-void   dldefer       (dltask *task, unsigned count);
-int    dlmain        (dltask *, dlwentryfn, dlwexitfn);
-int    dlmainex      (dltask *, dlwentryfn, dlwexitfn, int workers);
-void   dlterminate   (void);
-int    dlworker_index(void);
+#include "deadlock/internal.h"
 
 #endif /* DEADLOCK_DL_H_ */

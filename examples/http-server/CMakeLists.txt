@@ -6,4 +6,6 @@ if(UNIX)
 	# Required POSIX version for networking components
 	target_compile_definitions(http-server PRIVATE _POSIX_C_SOURCE=200112L)
 	target_link_libraries(http-server PRIVATE deadlock)
+else()
+	message(STATUS "Skipping examples/http-server because it requires POSIX.")
 endif()

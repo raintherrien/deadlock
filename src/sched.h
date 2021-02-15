@@ -55,4 +55,6 @@ void  dlsched_join     (struct dlsched *);
 int   dlsched_steal    (struct dlsched *, dltask **, int src);
 void  dlsched_terminate(struct dlsched *);
 
+extern struct dlsched *dl_default_sched;
+
 #endif /* DEADLOCK_SCHED_H_ */

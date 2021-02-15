@@ -20,10 +20,11 @@ find_package(Threads REQUIRED)
 # Add warnings
 # Note: add_compile_options propegates these options to e.g. examples.
 set(DEADLOCK_MSVC_WARNFLAGS /W4 /WX)
-set(DEADLOCK_OTHR_WARNFLAGS -Wall -Werror -Wextra)
+set(DEADLOCK_OTHR_WARNFLAGS -Wall -Werror -Wextra -pedantic)
 add_compile_options("$<IF:$<C_COMPILER_ID:MSVC>,${DEADLOCK_MSVC_WARNFLAGS},${DEADLOCK_OTHR_WARNFLAGS}>")
 
 set(DEADLOCK_SOURCES ${PROJECT_SOURCE_DIR}/src/dl.c
+                     ${PROJECT_SOURCE_DIR}/src/graph.c
                      ${PROJECT_SOURCE_DIR}/src/sched.c
                      ${PROJECT_SOURCE_DIR}/src/tqueue.c
                      ${PROJECT_SOURCE_DIR}/src/worker.c)
@@ -47,6 +48,13 @@ if(DEADLOCK_BUILD_TUNE)
 	target_compile_options(deadlock PUBLIC -march=native)
 endif()
 
+option(DEADLOCK_GRAPH_EXPORT "Build with graph export support" ON)
+if(DEADLOCK_GRAPH_EXPORT)
+	target_compile_definitions(deadlock PUBLIC DEADLOCK_GRAPH_EXPORT=1)
+else()
+	target_compile_definitions(deadlock PUBLIC DEADLOCK_GRAPH_EXPORT=0)
+endif()
+
 export(TARGETS deadlock FILE deadlock-config.cmake)
 export(PACKAGE deadlock)
 
@@ -54,5 +62,6 @@ option(DEADLOCK_BUILD_EXAMPLES "Build example programs" OFF)
 mark_as_advanced(FORCE DEADLOCK_BUILD_EXAMPLES)
 if(DEADLOCK_BUILD_EXAMPLES)
 	add_subdirectory(examples/http-server)
+	add_subdirectory(examples/pretty-profile)
 	add_subdirectory(examples/visualize-optick)
 endif()

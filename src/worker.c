@@ -20,7 +20,7 @@ _Thread_local struct dlworker *dl_this_worker;
  * dlworker_stall() blocks until more tasks are queued.
  */
 static void    dlworker_entry (void*);
-static dltask *dlworker_invoke(dltask *);
+static dltask *dlworker_invoke(struct dlworker *, dltask *);
 static void    dlworker_stall (struct dlworker *);
 
 void
@@ -40,7 +40,7 @@ dlworker_async(struct dlworker *w, dltask *t)
 			exit(errno);
 		}
 		case ENOBUFS:
-			t = dlworker_invoke(t);
+			t = dlworker_invoke(w, t);
 		}
 	} while (t);
 }
@@ -71,6 +71,10 @@ dlworker_init(struct dlworker *w, struct dlsched *s, dltask *task,
 	w->exit  = exit;
 	w->index = index;
 
+#if DEADLOCK_GRAPH_EXPORT
+	w->current_graph = NULL;
+#endif
+
 	/* TODO: Hardcoded task capacity */
 	unsigned int initsz = 8192; /* 8192 * 8B = 64KiB */
 
@@ -95,10 +99,53 @@ tqueue_init_failed:
 	return errno = result;
 }
 
+#if DEADLOCK_GRAPH_EXPORT
+
+void
+dlworker_set_current_node(void *wx, unsigned long description)
+{
+	struct dlworker *w = wx;
+	w->current_node = (struct dlgraph_node) {
+		.begin_ns = dlgraph_now(),
+		.task = w->invoked_task_id,
+		.desc = description,
+		.label_offset = ULONG_MAX
+	};
+}
+
+void
+dlworker_add_current_node(void *wx)
+{
+	struct dlworker *w = wx;
+	dlgraph_add_node(w->current_graph->fragments + w->index, &w->current_node);
+}
+
+void
+dlworker_add_edge_from_current(void *wx, dltask *task)
+{
+	struct dlworker *w = wx;
+	struct dlgraph *graph = w->current_graph;
+	if (graph) {
+		task->graph_ = graph;
+		dlgraph_add_edge(graph->fragments + w->index, w->invoked_task_id, task->tid_);
+	}
+}
+
+#endif
+
 static void
 dlworker_entry(void *xworker)
 {
 	struct dlworker *w = xworker;
+
+	/*
+	 * Initialize this threads task ID generator's most significant byte
+	 * with this workers ID (+ 1 to allow for tasks initialized without a
+	 * worker).
+	 */
+#if DEADLOCK_GRAPH_EXPORT
+	dl_next_task_id = ((unsigned long)(w->index+1) << 24) & 0xFF000000;
+#endif
 
 	/* Thread local pointer to this worker used by async etc. */
 	dl_this_worker = w;
@@ -121,7 +168,7 @@ dlworker_entry(void *xworker)
 	{
 		if (t) {
 			invoke:
-			t = dlworker_invoke(t);
+			t = dlworker_invoke(w, t);
 			continue;
 		}
 
@@ -155,13 +202,32 @@ dlworker_entry(void *xworker)
 }
 
 static dltask *
-dlworker_invoke(dltask *t)
+dlworker_invoke(struct dlworker *w, dltask *t)
 {
+	(void)w;
+
+	assert(atomic_load_explicit(&t->wait_, memory_order_relaxed) == 0);
 	dltask *next = t->next_;
-	t->fn_(t);
-	if (next != NULL &&
-	    1 == atomic_fetch_sub_explicit(&next->wait_, 1,
-	                                   memory_order_release))
+
+#if DEADLOCK_GRAPH_EXPORT
+	w->current_graph = t->graph_;
+	w->invoked_task_id = dltask_xchg_id(t);
+#endif
+
+	t->fn_(w, t);
+
+	/* Propegate graph to child and add this completed node to graph. */
+#if DEADLOCK_GRAPH_EXPORT
+	struct dlgraph *graph = w->current_graph;
+	if (graph) {
+		dlworker_add_current_node(w);
+		if (next)
+			dlworker_add_edge_from_current(w, next);
+	}
+#endif
+
+	if (next && 1 == atomic_fetch_sub_explicit(&next->wait_, 1,
+	                                           memory_order_release))
 	{
 		return next;
 	}

@@ -1,4 +1,5 @@
 #include "deadlock/dl.h"
+#include "deadlock/graph.h"
 
 #include "sched.h"
 
@@ -6,22 +7,21 @@
 #include <errno.h>
 #include <stdlib.h>
 
-/* dl_default_sched is a singleton used by dlmain() and dlterminate(). */
-static struct dlsched *dl_default_sched = NULL;
-
 /*
- * dl_global_tid is declared in internal.h when profiling is enabled and is
- * used to semi-uniquely identify every task created
+ * dl_default_sched is a singleton used by dlmain() and dlterminate().
  */
-atomic_uint dl_global_tid = 0;
+struct dlsched *dl_default_sched = NULL;
 
 void
-dlasync(dltask *task, dltask *next)
+dlasync(dltask *task)
 {
 	assert(dl_this_worker);
 	assert(task);
-	task->next_ = next;
-	dlworker_async(dl_this_worker, task);
+	struct dlworker *w = dl_this_worker;
+#if DEADLOCK_GRAPH_EXPORT
+	dlworker_add_edge_from_current(w, task);
+#endif
+	dlworker_async(w, task);
 }
 
 void
@@ -33,13 +33,6 @@ dlcontinuation(dltask *task, dltaskfn continuefn)
 		atomic_fetch_add_explicit(&task->next_->wait_, 1,
 		                          memory_order_relaxed);
 	}
-}
-
-void
-dldefer(dltask *task, unsigned count)
-{
-	assert(task);
-	atomic_fetch_add_explicit(&task->wait_, count, memory_order_relaxed);
 }
 
 int
@@ -85,10 +78,24 @@ malloc_failed:
 }
 
 void
+dlnext(dltask *task, dltask *next)
+{
+	assert(task);
+	task->next_ = next;
+}
+
+void
 dlterminate(void)
 {
-	assert(dl_this_worker);
-	dlsched_terminate(dl_this_worker->sched);
+	assert(dl_default_sched);
+	dlsched_terminate(dl_default_sched);
+}
+
+void
+dlwait(dltask *task, unsigned wait)
+{
+	assert(task);
+	atomic_fetch_add_explicit(&task->wait_, wait, memory_order_relaxed);
 }
 
 int
