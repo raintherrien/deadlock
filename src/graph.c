@@ -16,7 +16,7 @@
  * dlgraph_dump() writes the graph to a file in a format accepted by the
  * deadlock-graph utility program.
  */
-static void dlgraph_dump(struct dlgraph *, const char *filename);
+static void dlgraph_dump(struct dlgraph *, const char *prefix);
 
 /*
  * dlgraph_free() destroys and frees a graph.
@@ -71,6 +71,8 @@ MAYBE_GROW_GEOMETRICALLY(label_buffer)
 void
 dlgraph_fork(void)
 {
+	static atomic_ulong global_graph_id = 0;
+
 	assert(dl_this_worker);
 	assert(!dl_this_worker->current_graph); /* TODO: No recursive graph */
 	int nw = dl_this_worker->sched->nworkers;
@@ -81,20 +83,22 @@ dlgraph_fork(void)
 		exit(errno);
 	}
 	memset(wg, 0, wgsize);
+	wg->id = atomic_fetch_add_explicit(&global_graph_id, 1,
+	                                   memory_order_relaxed);
 	wg->nworkers = nw;
 	dl_this_worker->current_graph = wg;
 }
 
 void
-dlgraph_join(const char *filename)
+dlgraph_join(const char *filename_prefix)
 {
 	assert(dl_this_worker);
 	struct dlgraph *graph = dl_this_worker->current_graph;
 	if (graph) {
 		/* TODO: This is an ugly hack to include joining node */
 		dlworker_add_current_node(dl_this_worker);
-		if (filename)
-			dlgraph_dump(graph, filename);
+		if (filename_prefix)
+			dlgraph_dump(graph, filename_prefix);
 		dl_this_worker->current_graph = NULL;
 		dlgraph_free(graph);
 	}
@@ -137,6 +141,7 @@ dlgraph_add_edge(struct dlgraph_fragment *frag, unsigned long head, unsigned lon
 {
 	dlgraph_fragment_maybegrow_edges(frag, 1);
 	frag->edges[frag->edges_count ++] = (struct dlgraph_edge) {
+		.ts_ns = dlgraph_now(),
 		.head = head,
 		.tail = tail
 	};;
@@ -162,14 +167,19 @@ dlgraph_now(void)
 }
 
 static void
-dlgraph_dump(struct dlgraph *graph, const char *filename)
+dlgraph_dump(struct dlgraph *graph, const char *prefix)
 {
 	assert(dl_default_sched);
+
+	size_t fnlen = 1+snprintf(NULL, 0, "%s%lu.dlg", prefix, graph->id);
+	char *filename = calloc(fnlen, sizeof(*filename));
+	if (!filename)
+		goto panic;
+	sprintf(filename, "%s%lu.dlg", prefix, graph->id);
 	FILE *f = fopen(filename, "w");
-	if (!f) {
-		perror("dlgraph_write failed to create file");
-		exit(errno);
-	}
+	free(filename);
+	if (!f)
+		goto panic;
 
 	struct dlgraph_node_description *head = dl_node_description_lst_head;
 	fprintf(f, "%zu node descriptions\n", (size_t)(head->id + 1));
@@ -189,7 +199,7 @@ dlgraph_dump(struct dlgraph *graph, const char *filename)
 		struct dlgraph_fragment *frag = graph->fragments + w;
 		for (size_t i = 0; i < frag->edges_count; ++ i) {
 			struct dlgraph_edge e = frag->edges[i];
-			fprintf(f, "%lu %lu\n", e.head, e.tail);
+			fprintf(f, "%llu %lu %lu\n", e.ts_ns, e.head, e.tail);
 		}
 	}
 
@@ -206,10 +216,13 @@ dlgraph_dump(struct dlgraph *graph, const char *filename)
 		}
 	}
 
-	if (ferror(f) || fclose(f) != 0) {
-		perror("dlgraph_write failed to write to file");
-		exit(errno);
-	}
+	if (ferror(f) || fclose(f) != 0)
+		goto panic;
+
+	return;
+panic:
+	perror("dlgraph_write failed to write to file");
+	exit(errno);
 }
 
 static void

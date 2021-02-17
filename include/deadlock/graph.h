@@ -10,12 +10,13 @@
  * which begins recording child tasks: "next" tasks and tasks invoked by
  * dlasync(). A graph must be joined by calling dlgraph_join().
  *
- * dlgraph_join() must be called to free the current graph. filename is an
- * optional file to write graph data into. If filename is NULL no file is
- * created.
+ * dlgraph_join() must be called to free the current graph. filename_prefix is
+ * an optional file to write graph data into. If filename_prefix is NULL no
+ * file is created. Otherwise, a file is created using filename_prefix as the
+ * beginnings of a filename. TODO: This makes no sense
  */
 void dlgraph_fork(void);
-void dlgraph_join(const char *filename);
+void dlgraph_join(const char *filename_prefix);
 
 /*
  * glgraph_label() sets the label of the current task, using printf like args.

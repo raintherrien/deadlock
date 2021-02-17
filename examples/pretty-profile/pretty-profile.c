@@ -25,7 +25,7 @@ static DL_TASK_DECL(D_run);
 static DL_TASK_DECL(E_run);
 static DL_TASK_DECL(F_run);
 
-static void idle(void);
+static void idle(unsigned int);
 
 int
 main(void)
@@ -59,6 +59,9 @@ static DL_TASK_DECL(A_run)
 
 	dlasync(&B.task);
 	dlasync(&C.task);
+
+	idle(2);
+
 	dlasync(&E.task);
 }
 
@@ -66,46 +69,46 @@ static DL_TASK_DECL(B_run)
 {
 	DL_TASK_ENTRY(struct B_pkg, bptr, task);
 	dlgraph_label("B task");
-	idle();
+	idle(2);
 }
 
 static DL_TASK_DECL(C_run)
 {
 	DL_TASK_ENTRY(struct C_pkg, cptr, task);
 	dlgraph_label("C task");
-	idle();
+	idle(1);
 }
 
 static DL_TASK_DECL(D_run)
 {
 	DL_TASK_ENTRY(struct D_pkg, dptr, task);
 	dlgraph_label("D task");
-	idle();
+	idle(1);
 }
 
 static DL_TASK_DECL(E_run)
 {
 	DL_TASK_ENTRY(struct D_pkg, dptr, task);
 	dlgraph_label("E task");
-	idle();
+	idle(1);
 }
 
 static DL_TASK_DECL(F_run)
 {
 	DL_TASK_ENTRY(struct D_pkg, dptr, task);
 	dlgraph_label("F task");
-	idle();
-	dlgraph_join("pretty-profile.dlg");
+	idle(1);
+	dlgraph_join("pretty-profile");
 	dlterminate();
 }
 
 static void
-idle(void)
+idle(unsigned int ms)
 {
 #ifdef _WIN32
-	Sleep(0);
+	Sleep(ms);
 #else
-	struct timespec timeout = { .tv_sec = 0, .tv_nsec = 10 };
+	struct timespec timeout = { .tv_sec = 0, .tv_nsec = ms * 1000000 };
 	(void) nanosleep(&timeout, NULL);
 #endif
 }

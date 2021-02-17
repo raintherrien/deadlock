@@ -73,6 +73,7 @@ struct dlgraph_node {
  * An edge is defined by head and tail task IDs. *NOT* node IDs.
  */
 struct dlgraph_edge {
+	unsigned long long ts_ns;
 	unsigned long head;
 	unsigned long tail;
 };
@@ -98,7 +99,8 @@ struct dlgraph_fragment {
  * independently.
  */
 struct dlgraph {
-	int nworkers;
+	unsigned long id;
+	int           nworkers;
 	struct dlgraph_fragment fragments[];
 };
 
