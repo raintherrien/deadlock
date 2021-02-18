@@ -63,6 +63,7 @@ _Thread_local unsigned long dl_next_task_id = 0;
 			exit(errno);                                         \
 		}                                                            \
 	}
+MAYBE_GROW_GEOMETRICALLY(continuations)
 MAYBE_GROW_GEOMETRICALLY(edges)
 MAYBE_GROW_GEOMETRICALLY(nodes)
 MAYBE_GROW_GEOMETRICALLY(label_buffer)
@@ -137,6 +138,17 @@ dlgraph_link_node_description(struct dlgraph_node_description *desc)
 }
 
 void
+dlgraph_add_continuation(struct dlgraph_fragment *frag, unsigned long head, unsigned long tail)
+{
+	dlgraph_fragment_maybegrow_continuations(frag, 1);
+	frag->continuations[frag->continuations_count ++] = (struct dlgraph_edge) {
+		/* unused: .ts_ns */
+		.head = head,
+		.tail = tail
+	};
+}
+
+void
 dlgraph_add_edge(struct dlgraph_fragment *frag, unsigned long head, unsigned long tail)
 {
 	dlgraph_fragment_maybegrow_edges(frag, 1);
@@ -144,7 +156,7 @@ dlgraph_add_edge(struct dlgraph_fragment *frag, unsigned long head, unsigned lon
 		.ts_ns = dlgraph_now(),
 		.head = head,
 		.tail = tail
-	};;
+	};
 }
 
 void
@@ -186,12 +198,23 @@ dlgraph_dump(struct dlgraph *graph, const char *prefix)
 	write_node_descriptions_reverse(f, head);
 
 	int nw = dl_default_sched->nworkers;
+	size_t total_continuations = 0;
 	size_t total_edges = 0;
 	size_t total_nodes = 0;
 	for (int w = 0; w < nw; ++ w) {
 		struct dlgraph_fragment *frag = graph->fragments + w;
+		total_continuations += frag->continuations_count;
 		total_edges += frag->edges_count;
 		total_nodes += frag->nodes_count;
+	}
+
+	fprintf(f, "%zu continuations\n", total_continuations);
+	for (int w = 0; w < nw; ++ w) {
+		struct dlgraph_fragment *frag = graph->fragments + w;
+		for (size_t i = 0; i < frag->continuations_count; ++ i) {
+			struct dlgraph_edge e = frag->continuations[i];
+			fprintf(f, "%lu %lu\n", e.head, e.tail);
+		}
 	}
 
 	fprintf(f, "%zu edges\n", total_edges);
@@ -231,6 +254,7 @@ dlgraph_free(struct dlgraph *graph)
 	size_t nw = graph->nworkers;
 	for (size_t i = 0; i < nw; ++ i) {
 		free(graph->fragments[i].label_buffer);
+		free(graph->fragments[i].continuations);
 		free(graph->fragments[i].edges);
 		free(graph->fragments[i].nodes);
 	}

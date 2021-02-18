@@ -27,12 +27,17 @@ dlasync(dltask *task)
 void
 dlcontinuation(dltask *task, dltaskfn continuefn)
 {
+	assert(dl_this_worker);
 	assert(task);
 	task->fn_ = continuefn;
 	if (task->next_) {
 		atomic_fetch_add_explicit(&task->next_->wait_, 1,
 		                          memory_order_relaxed);
 	}
+
+#if DEADLOCK_GRAPH_EXPORT
+	dlworker_add_continuation_from_current(dl_this_worker, task);
+#endif
 }
 
 int

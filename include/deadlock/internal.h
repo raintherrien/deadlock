@@ -84,10 +84,13 @@ struct dlgraph_edge {
  */
 struct dlgraph_fragment {
 	char *label_buffer;
+	struct dlgraph_edge *continuations;
 	struct dlgraph_edge *edges;
 	struct dlgraph_node *nodes;
 	unsigned long label_buffer_count;
 	unsigned long label_buffer_size;
+	size_t continuations_count;
+	size_t continuations_size;
 	size_t edges_count;
 	size_t edges_size;
 	size_t nodes_count;
@@ -119,6 +122,7 @@ struct dltask_ {
 /* Worker methods to manipulate graph. Conditionally defined in worker.c */
 void dlworker_set_current_node(void *worker, unsigned long description);
 void dlworker_add_current_node(void *worker);
+void dlworker_add_continuation_from_current(void *worker, dltask *);
 void dlworker_add_edge_from_current(void *worker, dltask *);
 
 /*
@@ -147,6 +151,7 @@ dltask_xchg_id(dltask *t)
 
 /* Graph manipulation functions, conditionally defined in graph.c */
 unsigned long dlgraph_link_node_description(struct dlgraph_node_description *);
+void dlgraph_add_continuation(struct dlgraph_fragment *, unsigned long h, unsigned long t);
 void dlgraph_add_edge(struct dlgraph_fragment *, unsigned long h, unsigned long t);
 void dlgraph_add_node(struct dlgraph_fragment *, struct dlgraph_node *);
 unsigned long long dlgraph_now(void);
