@@ -10,7 +10,13 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <time.h>
+
+
+#ifdef _WIN32
+#include <sysinfoapi.h> /* GetSystemTimeAsFileTime */
+#else
+#include <time.h> /* clock_gettime */
+#endif
 
 /*
  * dlgraph_dump() writes the graph to a file in a format accepted by the
@@ -77,7 +83,7 @@ dlgraph_fork(void)
 	assert(dl_this_worker);
 	assert(!dl_this_worker->current_graph); /* TODO: No recursive graph */
 	int nw = dl_this_worker->sched->nworkers;
-	size_t wgsize = sizeof(struct dlgraph) + nw * sizeof(struct dlgraph_fragment);
+	size_t wgsize = sizeof(struct dlgraph) + sizeof(struct dlgraph_fragment) * (size_t)nw;
 	struct dlgraph *wg = malloc(wgsize);
 	if (!wg) {
 		perror("dlgraph_fork failed to allocate graph");
@@ -105,6 +111,8 @@ dlgraph_join(const char *filename_prefix)
 	}
 }
 
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wformat-nonliteral"
 void
 dlgraph_label(const char *fmt, ...)
 {
@@ -113,13 +121,21 @@ dlgraph_label(const char *fmt, ...)
 	                                  dl_this_worker->index;
 	va_list args;
 	va_start(args, fmt);
-	unsigned long length = 1 + vsnprintf(NULL, 0, fmt, args);
+	int writes = vsnprintf(NULL, 0, fmt, args);
+	if (writes < 0)
+		goto cleanup;
+	unsigned long length = 1 + (unsigned long)writes;
 	dlgraph_fragment_maybegrow_label_buffer(frag, length);
-	vsnprintf(frag->label_buffer + frag->label_buffer_count, length, fmt, args);
+	int written = vsnprintf(frag->label_buffer + frag->label_buffer_count, length, fmt, args);
+	if (written != writes)
+		goto cleanup;
 	dl_this_worker->current_node.label_offset = frag->label_buffer_count;
 	frag->label_buffer_count += length;
+cleanup:
+	/* Silently ignore error */
 	va_end(args);
 }
+#pragma clang diagnostic pop
 
 unsigned long
 dlgraph_link_node_description(struct dlgraph_node_description *desc)
@@ -170,12 +186,19 @@ dlgraph_add_node(struct dlgraph_fragment *frag, struct dlgraph_node *node)
 unsigned long long
 dlgraph_now(void)
 {
+#ifdef _WIN32
+	ULARGE_INTEGER t;
+	GetSystemTimeAsFileTime((FILETIME*)&t);
+	return t.QuadPart * 100; /* 100ns resolution */
+#else
 	struct timespec t;
 	if (clock_gettime(CLOCK_MONOTONIC, &t) != 0) {
 		perror("dlgraph_now failed to call clock_gettime");
 		exit(errno);
 	}
-	return (unsigned long long)t.tv_sec * 1000000000 + t.tv_nsec;
+	return (unsigned long long)t.tv_sec * 1000000000 +
+	       (unsigned long long)t.tv_nsec;
+#endif
 }
 
 static void
@@ -183,7 +206,11 @@ dlgraph_dump(struct dlgraph *graph, const char *prefix)
 {
 	assert(dl_default_sched);
 
-	size_t fnlen = 1+snprintf(NULL, 0, "%s%lu.dlg", prefix, graph->id);
+	int writes = snprintf(NULL, 0, "%s%lu.dlg", prefix, graph->id);
+	if (writes < 0)
+		goto panic;
+
+	size_t fnlen = 1 + (size_t)writes;
 	char *filename = calloc(fnlen, sizeof(*filename));
 	if (!filename)
 		goto panic;
@@ -193,7 +220,8 @@ dlgraph_dump(struct dlgraph *graph, const char *prefix)
 	if (!f)
 		goto panic;
 
-	struct dlgraph_node_description *head = dl_node_description_lst_head;
+	struct dlgraph_node_description* head;
+	head = atomic_load(&dl_node_description_lst_head);
 	fprintf(f, "%zu node descriptions\n", (size_t)(head->id + 1));
 	write_node_descriptions_reverse(f, head);
 
@@ -251,7 +279,7 @@ panic:
 static void
 dlgraph_free(struct dlgraph *graph)
 {
-	size_t nw = graph->nworkers;
+	size_t nw = (size_t)graph->nworkers;
 	for (size_t i = 0; i < nw; ++ i) {
 		free(graph->fragments[i].label_buffer);
 		free(graph->fragments[i].continuations);

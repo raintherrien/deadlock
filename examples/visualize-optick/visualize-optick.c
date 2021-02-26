@@ -7,9 +7,9 @@
 #include <string.h>
 
 #ifdef _WIN32
-#include <Windows.h>
+#include <synchapi.h> /* Sleep */
 #else
-#include <time.h> /* clock_gettime */
+#include <time.h> /* nanosleep */
 #endif
 
 /*

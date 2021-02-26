@@ -195,7 +195,7 @@ dlworker_entry(void *xworker)
 
 		/* attempt to steal 16 times before stalling */
 		for (size_t sc = 0; sc < 16; ++ sc) {
-			int rc = dlsched_steal(w->sched, &t, w->index);
+			rc = dlsched_steal(w->sched, &t, w->index);
 			if (rc == 0) goto invoke;
 			assert(rc == ENODATA);
 			dlthread_yield();

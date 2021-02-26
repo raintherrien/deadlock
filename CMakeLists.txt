@@ -20,7 +20,7 @@ find_package(Threads REQUIRED)
 # Add warnings
 # Note: add_compile_options propegates these options to e.g. examples.
 set(DEADLOCK_MSVC_WARNFLAGS /W4 /WX)
-set(DEADLOCK_OTHR_WARNFLAGS -Wall -Werror -Wextra -pedantic)
+set(DEADLOCK_OTHR_WARNFLAGS -Wall -Werror -Wextra)
 add_compile_options("$<IF:$<C_COMPILER_ID:MSVC>,${DEADLOCK_MSVC_WARNFLAGS},${DEADLOCK_OTHR_WARNFLAGS}>")
 
 set(DEADLOCK_SOURCES ${PROJECT_SOURCE_DIR}/src/dl.c
@@ -31,6 +31,11 @@ set(DEADLOCK_SOURCES ${PROJECT_SOURCE_DIR}/src/dl.c
 add_library(deadlock ${DEADLOCK_SOURCES})
 target_include_directories(deadlock PUBLIC ${PROJECT_SOURCE_DIR}/include)
 target_link_libraries(deadlock PUBLIC Threads::Threads)
+
+# Disable warnings about fopen in VS2019
+if(WIN32)
+	target_compile_definitions(deadlock PRIVATE _CRT_SECURE_NO_WARNINGS)
+endif()
 
 # Required POSIX version for nanosleep in src/sched.c
 if(UNIX)

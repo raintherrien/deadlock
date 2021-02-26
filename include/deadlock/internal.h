@@ -177,7 +177,7 @@ unsigned long long dlgraph_now(void);
 		dlworker_set_current_node(dlw_param, desc_id);           \
 	} while (0);                                                     \
 	outer_type *var = DL_TASK_DOWNCAST(dlt_param, outer_type, memb); \
-	(void) var;
+	(void) var
 
 /*
  * When profiling we must assign each task a unique ID

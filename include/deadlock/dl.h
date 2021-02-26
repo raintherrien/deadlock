@@ -129,7 +129,7 @@ int dlworker_index(void);
  * https://en.wikipedia.org/wiki/Offsetof
  */
 #define DL_TASK_DOWNCAST(ptr, T, memb) \
-	((T *)((char *)(1 ? (ptr) : &((T *)0)->memb) - offsetof(T, memb)))
+	((void *)((char *)(1 ? (ptr) : &((T *)0)->memb) - offsetof(T, memb)))
 
 /*
  * Intel 64 and IA-32 references manuals instruct you to align memory to 128
