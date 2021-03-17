@@ -111,8 +111,10 @@ dlgraph_join(const char *filename_prefix)
 	}
 }
 
+#ifdef __clang__
 #pragma clang diagnostic push
 #pragma clang diagnostic ignored "-Wformat-nonliteral"
+#endif
 void
 dlgraph_label(const char *fmt, ...)
 {
@@ -135,7 +137,9 @@ cleanup:
 	/* Silently ignore error */
 	va_end(args);
 }
+#ifdef __clang__
 #pragma clang diagnostic pop
+#endif
 
 unsigned long
 dlgraph_link_node_description(struct dlgraph_node_description *desc)
@@ -299,4 +303,3 @@ write_node_descriptions_reverse(FILE *f, struct dlgraph_node_description *head)
 }
 
 #endif /* DEADLOCK_GRAPH_EXPORT */
-
