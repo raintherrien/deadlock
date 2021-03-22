@@ -18,12 +18,12 @@ static struct C_pkg { dltask task; } C;
 static struct D_pkg { dltask task; } D;
 static struct E_pkg { dltask task; } E;
 static struct F_pkg { dltask task; } F;
-static DL_TASK_DECL(A_run);
-static DL_TASK_DECL(B_run);
-static DL_TASK_DECL(C_run);
-static DL_TASK_DECL(D_run);
-static DL_TASK_DECL(E_run);
-static DL_TASK_DECL(F_run);
+static void A_run(DL_TASK_ARGS);
+static void B_run(DL_TASK_ARGS);
+static void C_run(DL_TASK_ARGS);
+static void D_run(DL_TASK_ARGS);
+static void E_run(DL_TASK_ARGS);
+static void F_run(DL_TASK_ARGS);
 
 static void idle(unsigned int);
 
@@ -42,7 +42,7 @@ main(void)
 	return result;
 }
 
-static DL_TASK_DECL(A_run)
+static void A_run(DL_TASK_ARGS)
 {
 	DL_TASK_ENTRY(struct A_pkg, aptr, task);
 
@@ -65,35 +65,35 @@ static DL_TASK_DECL(A_run)
 	dlasync(&E.task);
 }
 
-static DL_TASK_DECL(B_run)
+static void B_run(DL_TASK_ARGS)
 {
 	DL_TASK_ENTRY(struct B_pkg, bptr, task);
 	dlgraph_label("B task");
 	idle(2);
 }
 
-static DL_TASK_DECL(C_run)
+static void C_run(DL_TASK_ARGS)
 {
 	DL_TASK_ENTRY(struct C_pkg, cptr, task);
 	dlgraph_label("C task");
 	idle(1);
 }
 
-static DL_TASK_DECL(D_run)
+static void D_run(DL_TASK_ARGS)
 {
 	DL_TASK_ENTRY(struct D_pkg, dptr, task);
 	dlgraph_label("D task");
 	idle(1);
 }
 
-static DL_TASK_DECL(E_run)
+static void E_run(DL_TASK_ARGS)
 {
 	DL_TASK_ENTRY(struct D_pkg, dptr, task);
 	dlgraph_label("E task");
 	idle(1);
 }
 
-static DL_TASK_DECL(F_run)
+static void F_run(DL_TASK_ARGS)
 {
 	DL_TASK_ENTRY(struct D_pkg, dptr, task);
 	dlgraph_label("F task");

@@ -21,7 +21,7 @@ struct accept_pkg {
 	dltask task;
 	int socketfd;
 };
-static DL_TASK_DECL(accept_run);
+static void accept_run(DL_TASK_ARGS);
 
 /*
  * read reads payload from client, performs zero validation, and queues
@@ -33,8 +33,8 @@ struct rw_pkg {
 	dltask task;
 	int clientfd;
 };
-static DL_TASK_DECL(read_run);
-static DL_TASK_DECL(write_run);
+static void read_run(DL_TASK_ARGS);
+static void write_run(DL_TASK_ARGS);
 
 int
 main(int argc, char** argv)
@@ -105,7 +105,8 @@ start_listen(const char *port)
 	return sfd;
 }
 
-static DL_TASK_DECL(accept_run)
+static void
+accept_run(DL_TASK_ARGS)
 {
 	DL_TASK_ENTRY(struct accept_pkg, pkg, task);
 
@@ -136,7 +137,8 @@ error:
 	dlterminate();
 }
 
-static DL_TASK_DECL(read_run)
+static void
+read_run(DL_TASK_ARGS)
 {
 	DL_TASK_ENTRY(struct rw_pkg, pkg, task);
 
@@ -172,7 +174,8 @@ close_conn:
 	free(pkg);
 }
 
-static DL_TASK_DECL(write_run)
+static void
+write_run(DL_TASK_ARGS)
 {
 	DL_TASK_ENTRY(struct rw_pkg, pkg, task);
 

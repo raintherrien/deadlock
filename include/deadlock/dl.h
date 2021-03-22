@@ -8,14 +8,19 @@
 typedef struct dltask_ dltask;
 
 /*
+ * DL_TASK_ARGS should be used to declare and define dltaskfn functions. This
+ * really does nothing except obscure the argument list and give the dltask
+ * arg a consistent name for DL_TASK_ENTRY to work with, which is a much more
+ * important macro.
+ */
+#define DL_TASK_ARGS void *dlw_param, dltask *dlt_param
+
+/*
  * Each dltask must be assigned a function to invoke upon execution. This
  * function is passed the dltask object, from which the outer task object may
  * be retrieved by DL_TASK_DOWNCAST().
- *
- * Rather than declare or define dltaskfn directly client code should use
- * DL_TASK_DECL() and DL_TASK_ENTRY() to avoid breaking changes.
  */
-typedef void(*dltaskfn)(void *worker, dltask *);
+typedef void(*dltaskfn)(DL_TASK_ARGS);
 
 /*
  * dlasync() schedules a task to execute on the current task scheduler. Must
@@ -54,29 +59,12 @@ void dlwait(dltask *task, unsigned wait);
 #endif
 
 /*
- * DL_TASK_DECL should be used to declare and define dltaskfn functions. This
- * really does nothing except obscure the return type and give the dltask arg
- * a consistent name for DL_TASK_ENTRY to work with, which is a much more
- * important macro.
- *
- * Example dltaskfn declaration:
- * 	struct some_task_pkg { dltask dlt; ... };
- * 	static DL_TASK_DECL(some_task_function); // forward declare
- * 	...
- * 	static DL_TASK_DECL(some_task_function) {
- * 		DL_TASK_ENTRY(struct some_task_pkg, pkg, dlt);
- * 		...
- * 	}
- */
-#define DL_TASK_DECL(taskname) void taskname(void *dlw_param, dltask *dlt_param)
-
-/*
  * DL_TASK_ENTRY downcasts the dltask arg to a typed structure and performs
  * static initialization of this task, registering it globally and storing
  * info such as file, line, function name, as well as dynamic registration of
  * this particular invocation (node in a task graph).
  *
- * See DL_TASK_DECL() for usage.
+ * See DL_TASK_ARGS for usage.
  */
 #if 0
 #define DL_TASK_ENTRY(outer_type, var, memb)

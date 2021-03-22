@@ -40,7 +40,7 @@ struct terminate_pkg;
 struct terminate_pkg {
 	dltask task;
 };
-static DL_TASK_DECL(terminate_run);
+static void terminate_run(DL_TASK_ARGS);
 
 /*
  * Performs a guess.
@@ -50,7 +50,7 @@ struct contestant_pkg {
 	struct game_pkg *game;
 	unsigned int     score;
 };
-static DL_TASK_DECL(contestant_run);
+static void contestant_run(DL_TASK_ARGS);
 
 /*
  * Orchestrates the whole mess.
@@ -63,8 +63,8 @@ struct game_pkg {
 	unsigned int          winner;
 	struct contestant_pkg contestants[];
 };
-static DL_TASK_DECL(game_start);
-static DL_TASK_DECL(game_round);
+static void game_start(DL_TASK_ARGS);
+static void game_round(DL_TASK_ARGS);
 
 /*
  * Helper macros to scope Optick events
@@ -167,7 +167,8 @@ worker_entry(int id)
 	OptickAPI_RegisterThread(threadname, (uint16_t)strlen(threadname));
 }
 
-static DL_TASK_DECL(terminate_run)
+static void
+terminate_run(DL_TASK_ARGS)
 {
 	DL_TASK_ENTRY(struct terminate_pkg, pkg, task);
 	const char *optfn = "fork-join";
@@ -175,7 +176,8 @@ static DL_TASK_DECL(terminate_run)
 	dlterminate();
 }
 
-static DL_TASK_DECL(game_start)
+static void
+game_start(DL_TASK_ARGS)
 {
 	DL_TASK_ENTRY(struct game_pkg, pkg, task);
 	BGN_EVENT;
@@ -184,7 +186,8 @@ static DL_TASK_DECL(game_start)
 	END_EVENT;
 }
 
-static DL_TASK_DECL(game_round)
+static void
+game_round(DL_TASK_ARGS)
 {
 	DL_TASK_ENTRY(struct game_pkg, pkg, task);
 
@@ -220,7 +223,8 @@ static DL_TASK_DECL(game_round)
 	END_EVENT;
 }
 
-static DL_TASK_DECL(contestant_run)
+static void
+contestant_run(DL_TASK_ARGS)
 {
 	DL_TASK_ENTRY(struct contestant_pkg, pkg, task);
 
