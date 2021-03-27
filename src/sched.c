@@ -22,7 +22,8 @@ dlsched_alloc(int nworkers)
 void
 dlsched_destroy(struct dlsched *s)
 {
-	assert(s->wbarrier == s->nworkers);
+	assert(atomic_load_explicit(&s->wbarrier, memory_order_relaxed)
+	         == s->nworkers);
 
 	for (int w = 0; w < s->nworkers; ++ w) {
 		dlworker_destroy(s->workers + w);
