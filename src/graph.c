@@ -208,8 +208,6 @@ dlgraph_now(void)
 static void
 dlgraph_dump(struct dlgraph *graph, const char *prefix)
 {
-	assert(dl_default_sched);
-
 	int writes = snprintf(NULL, 0, "%s%lu.dlg", prefix, graph->id);
 	if (writes < 0)
 		goto panic;
@@ -229,7 +227,7 @@ dlgraph_dump(struct dlgraph *graph, const char *prefix)
 	fprintf(f, "%zu node descriptions\n", (size_t)(head->id + 1));
 	write_node_descriptions_reverse(f, head);
 
-	int nw = dl_default_sched->nworkers;
+	int nw = graph->nworkers;
 	size_t total_continuations = 0;
 	size_t total_edges = 0;
 	size_t total_nodes = 0;

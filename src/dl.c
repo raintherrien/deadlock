@@ -7,11 +7,6 @@
 #include <errno.h>
 #include <stdlib.h>
 
-/*
- * dl_default_sched is a singleton used by dlmain() and dlterminate().
- */
-struct dlsched *dl_default_sched = NULL;
-
 void
 dlasync(dltask *task)
 {
@@ -54,30 +49,27 @@ int
 dlmainex(dltask *task, dlwentryfn entry, dlwexitfn exit, int workers)
 {
 	assert(task);
-	assert(!dl_default_sched);
 
 	int result = 0;
 
-	dl_default_sched = dlsched_alloc(workers);
-	if (!dl_default_sched) {
+	struct dlsched *sched = dlsched_alloc(workers);
+	if (!sched) {
 		result = errno;
 		goto malloc_failed;
 	}
 
-	result = dlsched_init(dl_default_sched, workers, task, entry, exit);
-	if (result) goto dlsched_init_failed;
+	result = dlsched_init(sched, workers, task, entry, exit);
+	if (result)
+		goto dlsched_init_failed;
 
-	dlsched_join(dl_default_sched);
-	dlsched_destroy(dl_default_sched);
-	free(dl_default_sched);
-	dl_default_sched = NULL;
+	dlsched_join(sched);
+	dlsched_destroy(sched);
+	free(sched);
 
 	return 0;
 
 dlsched_init_failed:
-	free(dl_default_sched);
-	dl_default_sched = NULL;
-
+	free(sched);
 malloc_failed:
 	return errno = result;
 }
@@ -92,8 +84,8 @@ dlnext(dltask *task, dltask *next)
 void
 dlterminate(void)
 {
-	assert(dl_default_sched);
-	dlsched_terminate(dl_default_sched);
+	assert(dl_this_worker);
+	dlsched_terminate(dl_this_worker->sched);
 }
 
 void
