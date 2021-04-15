@@ -48,6 +48,7 @@ typedef void(*dltaskfn)(DL_TASK_ARGS);
 void dlasync(dltask *task);
 void dlcontinuation(dltask *task, dltaskfn continuefn);
 void dlnext(dltask *task, dltask *next);
+void dltail(dltask *task);
 void dlwait(dltask *task, unsigned wait);
 
 /*

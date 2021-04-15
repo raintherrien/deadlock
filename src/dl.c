@@ -82,6 +82,25 @@ dlnext(dltask *task, dltask *next)
 }
 
 void
+dltail(dltask *task)
+{
+	assert(dl_this_worker);
+	assert(task);
+
+	if (task->next_) {
+		atomic_fetch_add_explicit(&task->next_->wait_, 1,
+		                          memory_order_relaxed);
+	}
+
+	struct dlworker *w = dl_this_worker;
+#if DEADLOCK_GRAPH_EXPORT
+	dlworker_add_continuation_from_current(w, task);
+	dlworker_add_edge_from_current(w, task);
+#endif
+	dlworker_async(w, task);
+}
+
+void
 dlterminate(void)
 {
 	assert(dl_this_worker);
