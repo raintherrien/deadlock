@@ -42,12 +42,24 @@ typedef void(*dltaskfn)(DL_TASK_ARGS);
  * the child task. dlnext() can be called to associate a task with multiple
  * parents but a task can have only one child.
  *
+ * dlswap() Queues the passed task "other" for invocation immediately. Any
+ * tasks waiting on "this" task are now also waiting on "other". This is an
+ * alternative to dlcontinuation() "block based" recursion. This is like a
+ * tail call to a different task.
+ *
+ * dltail() recursively invokes a task. The task passed should be the task
+ * currently executing, and dltail() should only be called before immediately
+ * ending the current task invocation. Conceptually, the task is re-invoked
+ * before dltail() returns and thus the current task will be running at the
+ * same time or might even finish after the spawned task.
+ *
  * dlwait() increments the number of dependencies on a task. This should be
  * equal to the number of dlasync invocations this task is passed to.
  */
 void dlasync(dltask *task);
 void dlcontinuation(dltask *task, dltaskfn continuefn);
 void dlnext(dltask *task, dltask *next);
+void dlswap(dltask *this, dltask *other);
 void dltail(dltask *task);
 void dlwait(dltask *task, unsigned wait);
 
