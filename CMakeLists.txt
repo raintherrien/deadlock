@@ -56,7 +56,6 @@ install(DIRECTORY ${PROJECT_SOURCE_DIR}/include/deadlock
         DESTINATION ${CMAKE_INSTALL_INCLUDEDIR})
 install(EXPORT deadlock
         FILE deadlock-config.cmake
-        NAMESPACE deadlock::
         DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/deadlock)
 
 option(DEADLOCK_BUILD_SAN "Build with sanitizers" OFF)
