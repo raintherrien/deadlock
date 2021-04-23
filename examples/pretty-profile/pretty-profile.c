@@ -7,7 +7,7 @@
 #include <string.h>
 
 #ifdef _WIN32
-#include <Windows.h>
+#include <windows.h>
 #else
 #include <time.h> /* clock_gettime */
 #endif

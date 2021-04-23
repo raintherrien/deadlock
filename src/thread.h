@@ -16,9 +16,35 @@ static int  dlwait_wait(struct dlwait *);
 static int  dlwait_init(struct dlwait *);
 static int  dlwait_destroy(struct dlwait *);
 
-#ifdef _WIN32
+#if defined(_WIN32)
 
-#include <Windows.h>
+#include <windows.h>
+
+static inline int
+dlprocessorcount(void)
+{
+	SYSTEM_INFO sysinfo;
+	GetSystemInfo(&sysinfo);
+	return (int)sysinfo.dwNumberOfProcessors;
+}
+
+#else
+
+#include <unistd.h> /* sysconf */
+
+static inline int
+dlprocessorcount(void)
+{
+	long ncpu = sysconf(_SC_NPROCESSORS_ONLN);
+	if (ncpu < 0) return errno;
+	if (ncpu == 0 || ncpu > INT_MAX) return errno = ERANGE;
+	return (int)ncpu;
+}
+
+#endif
+
+/* Assume mingw32/64 uses POSIX threads */
+#if defined(_WIN32) && !defined(__MINGW32__)
 
 struct dlthread {
 	dlthreadfn fn;
@@ -30,14 +56,6 @@ struct dlwait {
 	CONDITION_VARIABLE cv;
 	SRWLOCK srwlock;
 };
-
-static inline int
-dlprocessorcount(void)
-{
-	SYSTEM_INFO sysinfo;
-	GetSystemInfo(&sysinfo);
-	return (int)sysinfo.dwNumberOfProcessors;
-}
 
 static inline DWORD
 dlwinthreadfwd(LPVOID xdlt)
@@ -136,7 +154,6 @@ dlwait_destroy(struct dlwait *wait)
 #include <limits.h>
 #include <pthread.h>
 #include <sched.h>  /* sched_yield */
-#include <unistd.h> /* sysconf */
 
 struct dlthread {
 	dlthreadfn fn;
@@ -148,15 +165,6 @@ struct dlwait {
 	pthread_cond_t     cv;
 	pthread_mutex_t    mtx;
 };
-
-static inline int
-dlprocessorcount(void)
-{
-	long ncpu = sysconf(_SC_NPROCESSORS_ONLN);
-	if (ncpu < 0) return errno;
-	if (ncpu == 0 || ncpu > INT_MAX) return errno = ERANGE;
-	return (int)ncpu;
-}
 
 static inline void *
 dlpthreadfwd(void *arg)

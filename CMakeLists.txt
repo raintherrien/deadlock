@@ -5,6 +5,8 @@ set(CMAKE_C_STANDARD          11)
 set(CMAKE_C_STANDARD_REQUIRED ON)
 set(CMAKE_C_EXTENSIONS        OFF)
 
+include(GNUInstallDirs)
+
 # Try to compile release
 set(DEFAULT_BUILD_TYPE "Release")
 if(NOT CMAKE_BUILD_TYPE AND NOT CMAKE_CONFIGURATION_TYPES)
@@ -29,7 +31,9 @@ set(DEADLOCK_SOURCES ${PROJECT_SOURCE_DIR}/src/dl.c
                      ${PROJECT_SOURCE_DIR}/src/tqueue.c
                      ${PROJECT_SOURCE_DIR}/src/worker.c)
 add_library(deadlock ${DEADLOCK_SOURCES})
-target_include_directories(deadlock PUBLIC ${PROJECT_SOURCE_DIR}/include)
+target_include_directories(deadlock PUBLIC
+                           $<BUILD_INTERFACE:${PROJECT_SOURCE_DIR}/include>
+                           $<INSTALL_INTERFACE:include>)
 target_link_libraries(deadlock PUBLIC Threads::Threads)
 
 # Disable warnings about fopen in VS2019
@@ -41,6 +45,19 @@ endif()
 if(UNIX)
 	target_compile_definitions(deadlock PRIVATE _POSIX_C_SOURCE=199309L)
 endif()
+
+install(TARGETS deadlock
+        EXPORT deadlock
+        LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}
+        ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR}
+        RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
+        PUBLIC_HEADER DESTINATION ${CMAKE_INSTALL_INCLUDEDIR})
+install(DIRECTORY ${PROJECT_SOURCE_DIR}/include/deadlock
+        DESTINATION ${CMAKE_INSTALL_INCLUDEDIR})
+install(EXPORT deadlock
+        FILE deadlock-config.cmake
+        NAMESPACE deadlock::
+        DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/deadlock)
 
 option(DEADLOCK_BUILD_SAN "Build with sanitizers" OFF)
 if(DEADLOCK_BUILD_SAN)
@@ -60,9 +77,6 @@ else()
 	target_compile_definitions(deadlock PUBLIC DEADLOCK_GRAPH_EXPORT=0)
 endif()
 
-export(TARGETS deadlock FILE deadlock-config.cmake)
-export(PACKAGE deadlock)
-
 option(DEADLOCK_BUILD_EXAMPLES "Build example programs" OFF)
 mark_as_advanced(FORCE DEADLOCK_BUILD_EXAMPLES)
 if(DEADLOCK_BUILD_EXAMPLES)
@@ -70,3 +84,4 @@ if(DEADLOCK_BUILD_EXAMPLES)
 	add_subdirectory(examples/pretty-profile)
 	add_subdirectory(examples/visualize-optick)
 endif()
+
