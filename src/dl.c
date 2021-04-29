@@ -97,11 +97,11 @@ dlswap(dltask *this, dltask *other)
 }
 
 void
-dltail(dltask *task)
+dltail(dltask *task, dltaskfn continuefn)
 {
 	assert(dl_this_worker);
 	assert(task);
-
+	task->fn_ = continuefn;
 	if (task->next_) {
 		atomic_fetch_add_explicit(&task->next_->wait_, 1,
 		                          memory_order_relaxed);

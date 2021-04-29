@@ -60,7 +60,7 @@ void dlasync(dltask *task);
 void dlcontinuation(dltask *task, dltaskfn continuefn);
 void dlnext(dltask *task, dltask *next);
 void dlswap(dltask *this, dltask *other);
-void dltail(dltask *task);
+void dltail(dltask *task, dltaskfn continuefn);
 void dlwait(dltask *task, unsigned wait);
 
 /*

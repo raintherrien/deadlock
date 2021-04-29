@@ -129,7 +129,8 @@ accept_run(DL_TASK_ARGS)
 	};
 
 	dlasync(&rw->task);
-	dltail(&pkg->task); /* Recursive! With no termination :) have fun! */
+	/* Recursive! With no termination :) have fun! */
+	dltail(&pkg->task, accept_run);
 
 	return;
 
