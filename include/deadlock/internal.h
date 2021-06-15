@@ -31,6 +31,7 @@ struct dltask_ {
  * When compiled without DEADLOCK_GRAPH_EXPORT DL_TASK_ENTRY() and
  * DL_TASK_INIT() are pretty basic.
  */
+#define DL_TASK_ENTRY_VOID (void)dlt_param; (void)dlw_param;
 #define DL_TASK_ENTRY(outer_type, var, memb)                             \
 	outer_type *var = DL_TASK_DOWNCAST(dlt_param, outer_type, memb); \
 	(void) dlw_param;                                                \
@@ -161,8 +162,9 @@ unsigned long long dlgraph_now(void);
  * description superblock linked list entry, as well as initializing the
  * current node.
  */
-#define DL_TASK_ENTRY(outer_type, var, memb)                             \
+#define DL_TASK_ENTRY_VOID                                               \
 	do {                                                             \
+		(void)dlt_param; (void)dlw_param;                        \
 		static struct dlgraph_node_description desc = {          \
 			.file = __FILE__,                                \
 			.func = __func__,                                \
@@ -175,7 +177,9 @@ unsigned long long dlgraph_now(void);
 			atomic_store(&once, 0);                          \
 		}                                                        \
 		dlworker_set_current_node(dlw_param, desc_id);           \
-	} while (0);                                                     \
+	} while (0);
+#define DL_TASK_ENTRY(outer_type, var, memb)                             \
+	DL_TASK_ENTRY_VOID;                                              \
 	outer_type *var = DL_TASK_DOWNCAST(dlt_param, outer_type, memb); \
 	(void) var
 

@@ -32,7 +32,7 @@ typedef void(*dltaskfn)(DL_TASK_ARGS);
  * with this task is updated and any task depending on this task's completion
  * is not invoked until this task is invoked next.
  * Typically dlcontinuation is used by a subgraph which forks its own children
- * using dlasync that join back to this task using dldefer. By doing this you
+ * using dlasync that join back to this task using dlnext. By doing this you
  * can emulate SBRM by having a "create" and "destroy" function execute on the
  * same task object and suspend any dependent tasks set by the caller until
  * any amount of work is completed and the continuation is complete.
@@ -81,6 +81,14 @@ void dlwait(dltask *task, unsigned wait);
  */
 #if 0
 #define DL_TASK_ENTRY(outer_type, var, memb)
+#endif
+
+/*
+ * DL_TASK_ENTRY_VOID performs the same static initialization of DL_TASK_ENTRY
+ * but without deriving any task context structure.
+ */
+#if 0
+#define DL_TASK_ENTRY_VOID
 #endif
 
 /*
