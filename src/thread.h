@@ -1,16 +1,17 @@
 #ifndef DEADLOCK_THREAD_H_
 #define DEADLOCK_THREAD_H_
 
+#define DLWAIT_TIMEOUT_MS 10
+
 struct dlthread;
 struct dlwait;
 
 typedef void(*dlthreadfn)(void *);
 
 static int  dlprocessorcount(void);
-static int  dlthread_create(struct dlthread *, dlthreadfn, void *);
+static int  dlthread_create(struct dlthread *, dlthreadfn, void *, int);
 static int  dlthread_join(struct dlthread *);
 static void dlthread_yield(void);
-static int  dlwait_signal(struct dlwait *);
 static int  dlwait_broadcast(struct dlwait *);
 static int  dlwait_wait(struct dlwait *);
 static int  dlwait_init(struct dlwait *);
@@ -30,6 +31,8 @@ dlprocessorcount(void)
 
 #else
 
+/* TODO: Wrap in CMake macro? */
+#define _GNU_SOURCE
 #include <errno.h>
 #include <limits.h>
 #include <unistd.h> /* sysconf */
@@ -68,7 +71,7 @@ dlwinthreadfwd(LPVOID xdlt)
 }
 
 static inline int
-dlthread_create(struct dlthread *t, dlthreadfn fn, void *arg)
+dlthread_create(struct dlthread *t, dlthreadfn fn, void *arg, int affinity)
 {
 	t->fn = fn;
 	t->arg = arg;
@@ -76,6 +79,12 @@ dlthread_create(struct dlthread *t, dlthreadfn fn, void *arg)
 	if (t->handle == NULL) {
 		/* TODO: GetLastError does not return errno values */
 		return -1;
+	}
+	if (affinity < 0 ||
+            affinity >= dlprocessorcount() ||
+	    SetThreadAffinityMask(t->handle, 1 << affinity) == 0)
+	{
+		/* TODO: Warning? */
 	}
 	return 0;
 }
@@ -104,14 +113,6 @@ dlthread_yield(void)
 }
 
 static inline int
-dlwait_signal(struct dlwait *wait)
-{
-	/* Cannot fail */
-	WakeConditionVariable(&wait->cv);
-	return 0;
-}
-
-static inline int
 dlwait_broadcast(struct dlwait *wait)
 {
 	/* Cannot fail */
@@ -124,9 +125,10 @@ dlwait_wait(struct dlwait *wait)
 {
 	AcquireSRWLockShared(&wait->srwlock);
 	BOOL success = SleepConditionVariableSRW(&wait->cv, &wait->srwlock,
-	                 INFINITE, CONDITION_VARIABLE_LOCKMODE_SHARED);
+	                 DLWAIT_TIMEOUT_MS,
+	                 CONDITION_VARIABLE_LOCKMODE_SHARED);
 	ReleaseSRWLockShared(&wait->srwlock);
-	if (success) return 0;
+	if (success || GetLastError() == ERROR_TIMEOUT) return 0;
 	else {
 		/* TODO: GetLastError does not return errno values */
 		return -1;
@@ -175,11 +177,23 @@ dlpthreadfwd(void *arg)
 }
 
 static inline int
-dlthread_create(struct dlthread *t, dlthreadfn fn, void *arg)
+dlthread_create(struct dlthread *t, dlthreadfn fn, void *arg, int affinity)
 {
 	t->fn = fn;
 	t->arg = arg;
-	return pthread_create(&t->handle, NULL, dlpthreadfwd, t);
+	int rc = pthread_create(&t->handle, NULL, dlpthreadfwd, t);
+	if (rc)
+		return rc;
+
+	if (affinity < 0 || affinity >= dlprocessorcount()) {
+		/* TODO: Warn? */
+	} else {
+		cpu_set_t cpuset;
+		CPU_ZERO(&cpuset);
+		CPU_SET(affinity, &cpuset);
+		(void) pthread_setaffinity_np(t->handle, sizeof(cpu_set_t), &cpuset);
+	}
+	return 0;
 }
 
 static inline int
@@ -195,12 +209,6 @@ dlthread_yield(void)
 }
 
 static inline int
-dlwait_signal(struct dlwait *wait)
-{
-	return pthread_cond_signal(&wait->cv);
-}
-
-static inline int
 dlwait_broadcast(struct dlwait *wait)
 {
 	return pthread_cond_broadcast(&wait->cv);
@@ -209,9 +217,17 @@ dlwait_broadcast(struct dlwait *wait)
 static inline int
 dlwait_wait(struct dlwait *wait)
 {
+	struct timespec ts;
+	clock_gettime(CLOCK_REALTIME, &ts);
+	unsigned long long ns = ts.tv_sec * 1000000000ull +
+	                        ts.tv_nsec +
+	                        DLWAIT_TIMEOUT_MS * 1000000ull;
+	ts.tv_sec  = ns / 1000000000;
+	ts.tv_nsec = ns % 1000000000;
 	int pr;
 	if ((pr = pthread_mutex_lock(&wait->mtx)) ||
-	    (pr = pthread_cond_wait(&wait->cv, &wait->mtx)) ||
+	    ( (pr = pthread_cond_timedwait(&wait->cv, &wait->mtx, &ts))
+              && pr != ETIMEDOUT ) ||
 	    (pr = pthread_mutex_unlock(&wait->mtx)))
 	{
 		return pr;

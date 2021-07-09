@@ -33,7 +33,7 @@ dlworker_async(struct dlworker *w, dltask *t)
 		 */
 		switch (dltqueue_push(&w->tqueue, t)) {
 		case 0: {
-			int result = dlwait_signal(&w->sched->stall);
+			int result = dlwait_broadcast(&w->sched->stall);
 			if (result == 0) return;
 			errno = result;
 			perror("dlworker_async failed to signal stall");
@@ -87,7 +87,7 @@ dlworker_init(struct dlworker *w, struct dlsched *s, dltask *task,
 	}
 
 	/* TODO: Thread pinning */
-	result = dlthread_create(&w->thread, dlworker_entry, w);
+	result = dlthread_create(&w->thread, dlworker_entry, w, index);
 	if (result) goto pthread_create_failed;
 
 	return 0;
@@ -193,7 +193,7 @@ dlworker_entry(void *xworker)
 		}
 		assert(rc == ENODATA);
 
-		/* attempt to steal 16 times before stalling */
+		/* attempt to steal before stalling */
 		for (size_t sc = 0; sc < 16; ++ sc) {
 			rc = dlsched_steal(w->sched, &t, w->index);
 			if (rc == 0) goto invoke;
