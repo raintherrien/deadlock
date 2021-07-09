@@ -1,8 +1,6 @@
 #ifndef DEADLOCK_THREAD_H_
 #define DEADLOCK_THREAD_H_
 
-#define DLWAIT_TIMEOUT_MS 10
-
 struct dlthread;
 struct dlwait;
 
@@ -60,6 +58,7 @@ struct dlthread {
 struct dlwait {
 	CONDITION_VARIABLE cv;
 	SRWLOCK srwlock;
+	int should_wait;
 };
 
 static inline DWORD
@@ -116,17 +115,27 @@ static inline int
 dlwait_broadcast(struct dlwait *wait)
 {
 	/* Cannot fail */
-	WakeAllConditionVariable(&wait->cv);
+	AcquireSRWLockShared(&wait->srwlock);
+	wait->should_wait = 0;
+	ReleaseSRWLockShared(&wait->srwlock);
+	WakeConditionVariable(&wait->cv);
 	return 0;
 }
 
 static inline int
 dlwait_wait(struct dlwait *wait)
 {
+	BOOL success = TRUE;
 	AcquireSRWLockShared(&wait->srwlock);
-	BOOL success = SleepConditionVariableSRW(&wait->cv, &wait->srwlock,
-	                 DLWAIT_TIMEOUT_MS,
-	                 CONDITION_VARIABLE_LOCKMODE_SHARED);
+	while (wait->should_wait && (success ||
+	                             GetLastError() == ERROR_TIMEOUT))
+	{
+		success = SleepConditionVariableSRW(
+		            &wait->cv, &wait->srwlock,
+		            INFINITE,
+		            CONDITION_VARIABLE_LOCKMODE_SHARED);
+	}
+	wait->should_wait = 1;
 	ReleaseSRWLockShared(&wait->srwlock);
 	if (success || GetLastError() == ERROR_TIMEOUT) return 0;
 	else {
@@ -141,6 +150,7 @@ dlwait_init(struct dlwait *wait)
 	/* Neither ops can fail */
 	InitializeSRWLock(&wait->srwlock);
 	InitializeConditionVariable(&wait->cv);
+	wait->should_wait = 1;
 	return 0;
 }
 
@@ -164,8 +174,9 @@ struct dlthread {
 };
 
 struct dlwait {
-	pthread_cond_t     cv;
-	pthread_mutex_t    mtx;
+	pthread_cond_t cv;
+	pthread_mutex_t mtx;
+	int should_wait;
 };
 
 static inline void *
@@ -211,27 +222,31 @@ dlthread_yield(void)
 static inline int
 dlwait_broadcast(struct dlwait *wait)
 {
-	return pthread_cond_broadcast(&wait->cv);
+	int pr;
+	if ((pr = pthread_mutex_lock(&wait->mtx)))
+		return pr;
+	wait->should_wait = 0;
+	if ((pr = pthread_mutex_unlock(&wait->mtx)))
+		return pr;
+	return pthread_cond_signal(&wait->cv);
 }
 
 static inline int
 dlwait_wait(struct dlwait *wait)
 {
-	struct timespec ts;
-	clock_gettime(CLOCK_REALTIME, &ts);
-	unsigned long long ns = ts.tv_sec * 1000000000ull +
-	                        ts.tv_nsec +
-	                        DLWAIT_TIMEOUT_MS * 1000000ull;
-	ts.tv_sec  = ns / 1000000000;
-	ts.tv_nsec = ns % 1000000000;
 	int pr;
-	if ((pr = pthread_mutex_lock(&wait->mtx)) ||
-	    ( (pr = pthread_cond_timedwait(&wait->cv, &wait->mtx, &ts))
-              && pr != ETIMEDOUT ) ||
-	    (pr = pthread_mutex_unlock(&wait->mtx)))
-	{
+
+	if ((pr = pthread_mutex_lock(&wait->mtx)))
 		return pr;
+
+	while (wait->should_wait) {
+		if ((pr = pthread_cond_wait(&wait->cv, &wait->mtx)))
+			return pr;
 	}
+	wait->should_wait = 1;
+	if ((pr = pthread_mutex_unlock(&wait->mtx)))
+		return pr;
+
 	return 0;
 }
 
@@ -244,6 +259,7 @@ dlwait_init(struct dlwait *wait)
 	{
 		return pr;
 	}
+	wait->should_wait = 1;
 	return 0;
 }
 

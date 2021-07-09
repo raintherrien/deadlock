@@ -194,7 +194,7 @@ dlworker_entry(void *xworker)
 		assert(rc == ENODATA);
 
 		/* attempt to steal before stalling */
-		for (size_t sc = 0; sc < 16; ++ sc) {
+		for (size_t sc = 0; sc < 4; ++ sc) {
 			rc = dlsched_steal(w->sched, &t, w->index);
 			if (rc == 0) goto invoke;
 			assert(rc == ENODATA);
