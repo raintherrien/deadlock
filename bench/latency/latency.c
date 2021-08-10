@@ -20,8 +20,7 @@
 typedef unsigned long long time_ns;
 static time_ns now_ns(void);
 
-static unsigned long num_threads;
-static unsigned long num_tasks;
+static int num_threads;
 
 struct timed_task {
 	/* _Alignas(128) non-destructive; this isn't even fair :) */
@@ -36,7 +35,7 @@ struct master_task {
 	unsigned iteration;
 	time_ns join_latency;
 	time_ns spawn_latency;
-	struct timed_task timing[]; /* num_tasks in length */
+	struct timed_task timing;
 };
 
 static void master_task_run(DL_TASK_ARGS);
@@ -47,33 +46,24 @@ static void timed_task_run(DL_TASK_ARGS);
 int
 main(int argc, char **argv)
 {
-	if (argc < 3 || argv[1] == NULL || argv[2] == NULL)
-		goto print_usage;
+	if (argc > 1 && argv[1]) {
+		errno = 0;
+		num_threads = (int)strtoul(argv[1], NULL, 10);
+		if (num_threads == 0) errno = EINVAL;
+		if (errno) {
+			perror("Invalid <num-threads>");
+			goto print_usage;
+		}
 
-	errno = 0;
-	num_threads = strtoul(argv[1], NULL, 10);
-	if (num_threads == 0) errno = EINVAL;
-	if (errno) {
-		perror("Invalid <num-threads>");
-		goto print_usage;
+		if ((int)num_threads < 2) {
+			perror("<num-threads> must be 2 or more to measure latency");
+			goto print_usage;
+		}
+	} else {
+		num_threads = -1;
 	}
 
-	if ((int)num_threads < 2) {
-		perror("<num-threads> must be 2 or more to measure latency");
-		goto print_usage;
-	}
-
-	num_tasks = strtoul(argv[2], NULL, 10);
-	if (num_tasks == 0) errno = EINVAL;
-	if (errno || (int)num_tasks < 1) {
-		perror("Invalid <num-tasks>");
-		goto print_usage;
-	}
-
-	printf("Spawning %lu threads\n", num_threads);
-	printf("Measuring task contention/latency by spawning %lu tasks\n", num_tasks);
-
-	struct master_task *master = malloc(sizeof(*master) + sizeof(struct timed_task) * num_tasks);
+	struct master_task *master = malloc(sizeof(*master));
 	if (master == NULL) {
 		perror("Failed allocating tasks");
 		return EXIT_FAILURE;
@@ -83,7 +73,12 @@ main(int argc, char **argv)
 	master->join_latency = 0;
 	master->spawn_latency = 0;
 
-	int result = dlmainex(&master->master, NULL, NULL, (int)num_threads);
+	int result;
+	if (num_threads == -1) {
+		result = dlmain(&master->master, NULL, NULL);
+	} else {
+		result = dlmainex(&master->master, NULL, NULL, num_threads);
+	}
 	if (result) perror("Error in dlmain");
 
 	free(master);
@@ -91,12 +86,7 @@ main(int argc, char **argv)
 	return result;
 
 print_usage:
-	fprintf(stderr, "Usage: ./latency <num-threads> <num-tasks>\n"
-	                " <num-threads> worker threads are created and the application"
-	                " spawns <num-tasks> tasks for them to fight over. Latency is"
-	                " measured between when the task is spawned and when it is"
-	                " stolen by a worker thread. The spawning thread blocks and"
-	                " does *not* perform its own tasks.\n");
+	fprintf(stderr, "Usage: ./latency <num-threads>\n");
 	return EXIT_SUCCESS;
 }
 
@@ -116,7 +106,7 @@ master_task_run(DL_TASK_ARGS)
 		printf("Average latency of %lu tasks:\n"
 		       "\tjoin:     %lluns\n"
 		       "\tspawn:    %lluns\n",
-		       num_tasks,
+		       (unsigned long)ITERATIONS,
 		       t->join_latency / ITERATIONS,
 		       t->spawn_latency / ITERATIONS);
 		dlterminate();
@@ -130,17 +120,11 @@ join_task_run(DL_TASK_ARGS)
 
 	time_ns joined = now_ns();
 	time_ns last_completed = 0;
-	time_ns avg_spawn_latency = 0;
 
-	for (size_t i = 0; i < num_tasks; ++ i) {
-		struct timed_task *tt = &t->timing[i];
-		if (tt->completed > last_completed)
-			last_completed = tt->completed;
-		avg_spawn_latency += tt->completed - tt->scheduled;
-	}
-
-	t->join_latency  += joined - last_completed;
-	t->spawn_latency += avg_spawn_latency / num_tasks;
+	if (t->timing.completed > last_completed)
+		last_completed = t->timing.completed;
+	t->spawn_latency += t->timing.completed - t->timing.scheduled;
+	t->join_latency += joined - last_completed;
 }
 
 static void
@@ -149,15 +133,12 @@ spawn_task_run(DL_TASK_ARGS)
 	DL_TASK_ENTRY(struct master_task, t, spawn_join);
 
 	dlcontinuation(&t->spawn_join, join_task_run);
-	dlwait(&t->spawn_join, num_tasks);
+	dlwait(&t->spawn_join, 1);
 
-	for (size_t i = 0; i < num_tasks; ++ i) {
-		struct timed_task *tt = &t->timing[i];
-		tt->task = DL_TASK_INIT(timed_task_run);
-		dlnext(&tt->task, &t->spawn_join);
-		tt->scheduled = now_ns();
-		dlasync(&tt->task);
-	}
+	t->timing.task = DL_TASK_INIT(timed_task_run);
+	dlnext(&t->timing.task, &t->spawn_join);
+	t->timing.scheduled = now_ns();
+	dlasync(&t->timing.task);
 }
 
 static void
