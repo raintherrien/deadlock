@@ -105,14 +105,13 @@ master_task_run(DL_TASK_ARGS)
 {
 	DL_TASK_ENTRY(struct master_task, t, master);
 
-	t->spawn_join = DL_TASK_INIT(spawn_task_run);
-	dlwait(&t->master, 1);
-	dlnext(&t->spawn_join, &t->master);
-	dlasync(&t->spawn_join);
-
 	if (t->iteration < ITERATIONS) {
 		++ t->iteration;
 		dlcontinuation(&t->master, master_task_run);
+		t->spawn_join = DL_TASK_INIT(spawn_task_run);
+		dlwait(&t->master, 1);
+		dlnext(&t->spawn_join, &t->master);
+		dlasync(&t->spawn_join);
 	} else {
 		printf("Average latency of %lu tasks:\n"
 		       "\tjoin:     %lluns\n"
