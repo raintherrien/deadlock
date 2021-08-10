@@ -1,0 +1,10 @@
+[package]
+name = "rs-async-std-latency"
+version = "1.0.0"
+authors = ["Rain Therrien <raintherrien@gmail.com>"]
+edition = "2018"
+
+[dependencies.async-std]
+version = "1.9.0"
+features = ["unstable", "attributes"]
+

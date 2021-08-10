@@ -76,13 +76,30 @@ else()
 	target_compile_definitions(deadlock PUBLIC DEADLOCK_GRAPH_EXPORT=0)
 endif()
 
-option(DEADLOCK_BUILD_EXAMPLES "Build example programs" OFF)
+option(DEADLOCK_BUILD_BENCHMARKS "Build benchmarks" OFF)
+mark_as_advanced(FORCE DEADLOCK_BUILD_BENCHMARKS)
+if(DEADLOCK_BUILD_BENCHMARKS)
+	add_subdirectory(bench/latency)
+
+	find_program(CARGO_EXECUTABLE "cargo")
+	if(CARGO_EXECUTABLE)
+		add_custom_target(rs-async-std-latency-copy
+		                  COMMAND ${CMAKE_COMMAND} -E copy_directory
+		                  ${PROJECT_SOURCE_DIR}/bench/rs-async-std-latency
+		                  ${CMAKE_CURRENT_BINARY_DIR}/bench/rs-async-std-latency)
+		add_custom_target(rs-async-std-latency
+		                  COMMAND ${CARGO_EXECUTABLE} build --release
+		                  WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/bench/rs-async-std-latency)
+		add_dependencies(rs-async-std-latency rs-async-std-latency-copy)
+		add_dependencies(deadlock rs-async-std-latency)
+	endif()
+endif()
+
+option(DEADLOCK_BUILD_EXAMPLES "Build examples" OFF)
 mark_as_advanced(FORCE DEADLOCK_BUILD_EXAMPLES)
 if(DEADLOCK_BUILD_EXAMPLES)
 	add_subdirectory(examples/http-server)
 	add_subdirectory(examples/idle)
-	add_subdirectory(examples/latency)
 	add_subdirectory(examples/pretty-profile)
 	add_subdirectory(examples/visualize-optick)
 endif()
-
