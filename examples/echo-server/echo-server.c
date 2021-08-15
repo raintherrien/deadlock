@@ -1,5 +1,15 @@
+/*
+ * A very basic TCP echo server implementation using POSIX sockets.
+ * - Listen port is by default 31337, because no one in their right mind
+ * should run this priveledged, but this can be set upon execution.
+ * - Only a TCP echo server
+ *
+ * Test with e.g.: netcat 127.0.0.1 31337
+ */
+
 #include "deadlock/dl.h"
 
+#include <assert.h>
 #include <errno.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -13,39 +23,33 @@
 /* start_listen finds and binds us a free socket */
 int start_listen(const char *port);
 
-/*
- * accept blocks for a client connection then spawns connection with the
- * client file descriptor and recursively schedules itself on success.
- */
-struct accept_pkg {
+struct accept {
 	dltask task;
 	int socketfd;
 };
-static void accept_run(DL_TASK_ARGS);
 
-/*
- * read reads payload from client, performs zero validation, and queues
- * a write to showcast dlcontinuation().
- *
- * Out of sheer laziness, define a generic task for both read and write.
- */
-struct rw_pkg {
+struct connection {
 	dltask task;
 	int clientfd;
 };
-static void read_run(DL_TASK_ARGS);
-static void write_run(DL_TASK_ARGS);
+static void accept_run(DL_TASK_ARGS);
+static void echo_run(DL_TASK_ARGS);
 
 int
 main(int argc, char** argv)
 {
+	if (argc > 1 && argv[1] && (strcmp(argv[1], "--help") || strcmp(argv[1], "-h"))) {
+		puts("Usage: echo-server [LISTEN-PORT]\n");
+		return EXIT_SUCCESS;
+	}
+
 	int socketfd = start_listen(argc == 2 ? argv[1] : "31337");
 
 	/*
 	 * Transfer complete control to a Deadlock scheduler. This
 	 * function will return when our scheduler is terminated.
 	 */
-	struct accept_pkg accept = {
+	struct accept accept = {
 		.task = DL_TASK_INIT(accept_run),
 		.socketfd = socketfd
 	};
@@ -108,7 +112,7 @@ start_listen(const char *port)
 static void
 accept_run(DL_TASK_ARGS)
 {
-	DL_TASK_ENTRY(struct accept_pkg, pkg, task);
+	DL_TASK_ENTRY(struct accept, pkg, task);
 
 	struct sockaddr_in addr;
 	socklen_t          addrlen = sizeof(addr);
@@ -118,13 +122,13 @@ accept_run(DL_TASK_ARGS)
 		goto error;
 	}
 
-	struct rw_pkg *rw = malloc(sizeof *rw);
+	struct connection *rw = malloc(sizeof *rw);
 	if (!rw) {
-		perror("Failed to allocate rw_pkg");
+		perror("Failed to allocate connection");
 		goto error;
 	}
-	*rw = (struct rw_pkg) {
-		.task = DL_TASK_INIT(read_run),
+	*rw = (struct connection) {
+		.task = DL_TASK_INIT(echo_run),
 		.clientfd = clientfd
 	};
 
@@ -139,34 +143,36 @@ error:
 }
 
 static void
-read_run(DL_TASK_ARGS)
+echo_run(DL_TASK_ARGS)
 {
-	DL_TASK_ENTRY(struct rw_pkg, pkg, task);
+	DL_TASK_ENTRY(struct connection, pkg, task);
 
-	char msg[4096];
+	char buf[4096];
 
-	ssize_t len = recv(pkg->clientfd, msg, 4096, 0);
+	ssize_t len = recv(pkg->clientfd, buf, 4096, 0);
 
 	if (len ==  0) goto close_conn; /* non-error */
 	if (len == -1) {
 		perror("Failed to recieve from client");
 		goto close_conn;
 	}
-	if (len == 4096) {
-		fprintf(stderr, "Message from client too long for buffer\n");
-		goto close_conn;
+
+	printf("Echoing:\n%.*s", (int)len, buf);
+
+	char *wbuf = buf;
+	while (len > 0) {
+		ssize_t written = write(pkg->clientfd, wbuf, len);
+		if (written ==  0) goto close_conn; /* non-error */
+		if (written == -1) {
+			perror("Failed to write to client");
+			goto close_conn;
+		}
+		assert(written <= len);
+		len -= written;
+		wbuf += written;
 	}
 
-	msg[len] = '\0';
-	printf("Received from client on worker %d:\n"
-	       "\033[32m%s\033[m\n",
-	       dlworker_index(), msg);
-
-	/*
-	 * Totally ignore what the client has to say and return some HTML.
-	 */
-	dlcontinuation(&pkg->task, write_run);
-	dlasync(&pkg->task);
+	dltail(&pkg->task, echo_run);
 	return;
 
 close_conn:
@@ -174,29 +180,3 @@ close_conn:
 	(void) close(pkg->clientfd);
 	free(pkg);
 }
-
-static void
-write_run(DL_TASK_ARGS)
-{
-	DL_TASK_ENTRY(struct rw_pkg, pkg, task);
-
-	char response[64];
-	ssize_t len = snprintf(response, 64,
-	                       "HTTP/1.0 200 OK\n\n"
-	                       "<html>You've been served by worker %d",
-	                       dlworker_index());
-	if (len < 0 || len >= 64) {
-		perror("Failed to construct response");
-		goto close_conn;
-	}
-	ssize_t written = write(pkg->clientfd, response, len);
-	if (written != len) {
-		perror("Failed to write to client");
-	}
-
-close_conn:
-	(void) shutdown(pkg->clientfd, SHUT_RDWR);
-	(void) close(pkg->clientfd);
-	free(pkg);
-}
-
