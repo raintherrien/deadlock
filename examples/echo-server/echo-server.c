@@ -8,15 +8,19 @@
  */
 
 #include "deadlock/dl.h"
+#include "deadlock/graph.h"
 
 #include <assert.h>
 #include <errno.h>
+#include <stdatomic.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 
 #include <netdb.h>
+#include <sys/select.h>
 #include <sys/socket.h>
+#include <sys/time.h>
 #include <sys/types.h>
 #include <unistd.h>
 
@@ -25,6 +29,7 @@ int start_listen(const char *port);
 
 struct accept {
 	dltask task;
+	dltask exit;
 	int socketfd;
 };
 
@@ -32,25 +37,32 @@ struct connection {
 	dltask task;
 	int clientfd;
 };
+static void entry_run(DL_TASK_ARGS);
 static void accept_run(DL_TASK_ARGS);
 static void echo_run(DL_TASK_ARGS);
+static void exit_run(DL_TASK_ARGS);
+
+static atomic_int should_close = 0;
 
 int
 main(int argc, char** argv)
 {
-	if (argc > 1 && argv[1] && (strcmp(argv[1], "--help") || strcmp(argv[1], "-h"))) {
+	if (argc > 1 && argv[1] && (strcmp(argv[1], "--help") == 0 || strcmp(argv[1], "-h") == 0)) {
 		puts("Usage: echo-server [LISTEN-PORT]\n");
 		return EXIT_SUCCESS;
 	}
 
-	int socketfd = start_listen(argc == 2 ? argv[1] : "31337");
+	const char *portstr = argc == 2 ? argv[1] : "31337";
+	int socketfd = start_listen(portstr);
+
+	printf("Listening on port %s, send '!' to exit\n", portstr);
 
 	/*
 	 * Transfer complete control to a Deadlock scheduler. This
 	 * function will return when our scheduler is terminated.
 	 */
 	struct accept accept = {
-		.task = DL_TASK_INIT(accept_run),
+		.task = DL_TASK_INIT(entry_run),
 		.socketfd = socketfd
 	};
 	int result = dlmain(&accept.task, NULL, NULL);
@@ -110,36 +122,76 @@ start_listen(const char *port)
 }
 
 static void
+entry_run(DL_TASK_ARGS)
+{
+	DL_TASK_ENTRY(struct accept, pkg, task);
+	dlgraph_fork();
+	dltail(&pkg->task, accept_run);
+
+	/* Make sure accept is complete before calling exit */
+	pkg->exit = DL_TASK_INIT(exit_run);
+	dlnext(&pkg->task, &pkg->exit);
+	dlwait(&pkg->exit, 1);
+}
+
+static void
+exit_run(DL_TASK_ARGS)
+{
+	DL_TASK_ENTRY(struct accept, pkg, task);
+	dlgraph_join("echo");
+	dlterminate();
+}
+
+static void
 accept_run(DL_TASK_ARGS)
 {
 	DL_TASK_ENTRY(struct accept, pkg, task);
 
 	struct sockaddr_in addr;
 	socklen_t          addrlen = sizeof(addr);
+
+	int wait = 0;
+	while (wait == 0) {
+		fd_set fds;
+		FD_ZERO(&fds);
+		FD_SET(pkg->socketfd, &fds);
+		struct timeval timeout = { .tv_sec = 2, .tv_usec = 0 };
+
+		wait = select(pkg->socketfd+1, &fds, NULL, NULL, &timeout);
+		if (wait == -1) {
+			perror("select socket failed");
+			return;
+		}
+
+		/* No cleanup */
+		if (should_close) {
+			return;
+		}
+	}
+
 	int clientfd = accept(pkg->socketfd, (struct sockaddr *)&addr, &addrlen);
 	if (clientfd == -1) {
 		perror("accept client failed");
-		goto error;
+		return;
 	}
 
 	struct connection *rw = malloc(sizeof *rw);
 	if (!rw) {
 		perror("Failed to allocate connection");
-		goto error;
+		return;
 	}
 	*rw = (struct connection) {
 		.task = DL_TASK_INIT(echo_run),
 		.clientfd = clientfd
 	};
 
+	/* Make sure rw is complete before calling exit */
+	dlwait(&pkg->exit, 1);
+	dlnext(&rw->task, &pkg->exit);
 	dlasync(&rw->task);
+
 	/* Recursive! With no termination :) have fun! */
 	dltail(&pkg->task, accept_run);
-
-	return;
-
-error:
-	dlterminate();
 }
 
 static void
@@ -149,6 +201,24 @@ echo_run(DL_TASK_ARGS)
 
 	char buf[4096];
 
+	int wait = 0;
+	while (wait == 0) {
+		fd_set fds;
+		FD_ZERO(&fds);
+		FD_SET(pkg->clientfd, &fds);
+		struct timeval timeout= { .tv_sec = 2, .tv_usec = 0 };
+
+		wait = select(pkg->clientfd+1, &fds, NULL, NULL, &timeout);
+		if (wait == -1) {
+			perror("select socket failed");
+			goto close_conn;
+		}
+
+		if (should_close) {
+			goto close_conn;
+		}
+	}
+
 	ssize_t len = recv(pkg->clientfd, buf, 4096, 0);
 
 	if (len ==  0) goto close_conn; /* non-error */
@@ -157,7 +227,13 @@ echo_run(DL_TASK_ARGS)
 		goto close_conn;
 	}
 
-	printf("Echoing:\n%.*s", (int)len, buf);
+	for (size_t i = 0; i < (size_t)len; ++ i) {
+		if (buf[i] == '!') {
+			puts("Received '!', closing connection\n");
+			should_close = 1;
+			break;
+		}
+	}
 
 	char *wbuf = buf;
 	while (len > 0) {
@@ -172,8 +248,10 @@ echo_run(DL_TASK_ARGS)
 		wbuf += written;
 	}
 
-	dltail(&pkg->task, echo_run);
-	return;
+	if (!should_close) {
+		dltail(&pkg->task, echo_run);
+		return;
+	}
 
 close_conn:
 	(void) shutdown(pkg->clientfd, SHUT_RDWR);

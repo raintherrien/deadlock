@@ -126,6 +126,7 @@ dlworker_add_continuation_from_current(void *wx, dltask *task)
 	struct dlworker *w = wx;
 	struct dlgraph *graph = w->current_graph;
 	if (graph) {
+		task->graph_ = graph;
 		dlgraph_add_continuation(graph->fragments + w->index, w->invoked_task_id, task->tid_);
 	}
 }
