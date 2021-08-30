@@ -137,7 +137,7 @@ entry_run(DL_TASK_ARGS)
 static void
 exit_run(DL_TASK_ARGS)
 {
-	DL_TASK_ENTRY(struct accept, pkg, task);
+	DL_TASK_ENTRY(struct accept, pkg, exit);
 	dlgraph_join("echo");
 	dlterminate();
 }
