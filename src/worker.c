@@ -217,7 +217,10 @@ dlworker_invoke(struct dlworker *w, dltask *t)
 {
 	(void)w;
 
+	assert(t);
+	assert(t->fn_);
 	assert(atomic_load_explicit(&t->wait_, memory_order_relaxed) == 0);
+
 	dltask *next = t->next_;
 
 #if DEADLOCK_GRAPH_EXPORT
