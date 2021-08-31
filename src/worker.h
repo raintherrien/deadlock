@@ -43,7 +43,7 @@ struct dlworker {
 	 * executing task in this threads worker struct. This eliminates
 	 * needless argument passing.
 	 */
-#if DEADLOCK_GRAPH_EXPORT
+#ifdef DEADLOCK_GRAPH_EXPORT
 	struct dlgraph_node current_node;
 	struct dlgraph *current_graph;
 	unsigned long   invoked_task_id;

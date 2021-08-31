@@ -71,7 +71,7 @@ dlworker_init(struct dlworker *w, struct dlsched *s, dltask *task,
 	w->exit  = exit;
 	w->index = index;
 
-#if DEADLOCK_GRAPH_EXPORT
+#ifdef DEADLOCK_GRAPH_EXPORT
 	w->current_graph = NULL;
 #endif
 
@@ -99,7 +99,7 @@ tqueue_init_failed:
 	return errno = result;
 }
 
-#if DEADLOCK_GRAPH_EXPORT
+#ifdef DEADLOCK_GRAPH_EXPORT
 
 void
 dlworker_set_current_node(void *wx, unsigned long description)
@@ -154,7 +154,7 @@ dlworker_entry(void *xworker)
 	 * with this workers ID (+ 1 to allow for tasks initialized without a
 	 * worker).
 	 */
-#if DEADLOCK_GRAPH_EXPORT
+#ifdef DEADLOCK_GRAPH_EXPORT
 	dl_next_task_id = ((unsigned long)(w->index+1) << 24) & 0xFF000000;
 #endif
 
@@ -223,7 +223,7 @@ dlworker_invoke(struct dlworker *w, dltask *t)
 
 	dltask *next = t->next_;
 
-#if DEADLOCK_GRAPH_EXPORT
+#ifdef DEADLOCK_GRAPH_EXPORT
 	w->current_graph = t->graph_;
 	w->invoked_task_id = dltask_xchg_id(t);
 #endif
@@ -231,7 +231,7 @@ dlworker_invoke(struct dlworker *w, dltask *t)
 	t->fn_(w, t);
 
 	/* Propegate graph to child and add this completed node to graph. */
-#if DEADLOCK_GRAPH_EXPORT
+#ifdef DEADLOCK_GRAPH_EXPORT
 	struct dlgraph *graph = w->current_graph;
 	if (graph) {
 		dlworker_add_current_node(w);

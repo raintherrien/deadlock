@@ -5,7 +5,7 @@
 #include <stddef.h>
 
 /* Determined at compile time by cmake configure_file */
-#define DEADLOCK_GRAPH_EXPORT
+#cmakedefine DEADLOCK_GRAPH_EXPORT
 
 #ifndef DEADLOCK_GRAPH_EXPORT
 

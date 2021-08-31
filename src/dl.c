@@ -13,7 +13,7 @@ dlasync(dltask *task)
 	assert(dl_this_worker);
 	assert(task);
 	struct dlworker *w = dl_this_worker;
-#if DEADLOCK_GRAPH_EXPORT
+#ifdef DEADLOCK_GRAPH_EXPORT
 	dlworker_add_edge_from_current(w, task);
 #endif
 	dlworker_async(w, task);
@@ -30,7 +30,7 @@ dlcontinuation(dltask *task, dltaskfn continuefn)
 		                          memory_order_relaxed);
 	}
 
-#if DEADLOCK_GRAPH_EXPORT
+#ifdef DEADLOCK_GRAPH_EXPORT
 	dlworker_add_continuation_from_current(dl_this_worker, task);
 #endif
 }
@@ -108,7 +108,7 @@ dltail(dltask *task, dltaskfn continuefn)
 	}
 
 	struct dlworker *w = dl_this_worker;
-#if DEADLOCK_GRAPH_EXPORT
+#ifdef DEADLOCK_GRAPH_EXPORT
 	dlworker_add_continuation_from_current(w, task);
 #endif
 	dlworker_async(w, task);

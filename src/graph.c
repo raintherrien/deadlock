@@ -2,7 +2,7 @@
 #include "deadlock/graph.h"
 #include "sched.h"
 
-#if DEADLOCK_GRAPH_EXPORT
+#ifdef DEADLOCK_GRAPH_EXPORT
 
 #include <assert.h>
 #include <errno.h>

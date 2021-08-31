@@ -1,7 +1,7 @@
 #ifndef DEADLOCK_GRAPH_H_
 #define DEADLOCK_GRAPH_H_
 
-#if DEADLOCK_GRAPH_EXPORT
+#ifdef DEADLOCK_GRAPH_EXPORT
 
 /*
  * Deadlock exposes a simple graph visualization API.
