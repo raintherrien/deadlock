@@ -196,6 +196,7 @@ dlthread_create(struct dlthread *t, dlthreadfn fn, void *arg, int affinity)
 	if (rc)
 		return rc;
 
+#if !defined(__MINGW32__)
 	if (affinity < 0 || affinity >= dlprocessorcount()) {
 		/* TODO: Warn? */
 	} else {
@@ -204,6 +205,7 @@ dlthread_create(struct dlthread *t, dlthreadfn fn, void *arg, int affinity)
 		CPU_SET(affinity, &cpuset);
 		(void) pthread_setaffinity_np(t->handle, sizeof(cpu_set_t), &cpuset);
 	}
+#endif
 	return 0;
 }
 
