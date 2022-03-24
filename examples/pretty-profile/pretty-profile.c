@@ -9,7 +9,7 @@
 #ifdef _WIN32
 #include <windows.h>
 #else
-#include <time.h> /* clock_gettime */
+#include <time.h> /* clock_gettime, nanosleep */
 #endif
 
 static struct A_pkg { dltask task; } A;
