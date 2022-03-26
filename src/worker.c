@@ -246,7 +246,7 @@ dlworker_invoke(struct dlworker *w, dltask *t)
 		switch (wait) {
 		case 0:
 			errno = EINVAL;
-			perror("dlworker_invoke next task invalid wait count");
+			perror("dlworker_invoke next task invalid wait count of 0 (already invoked)");
 			exit(errno);
 		case 1:
 			return next;

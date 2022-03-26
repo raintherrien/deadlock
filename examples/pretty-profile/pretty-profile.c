@@ -30,12 +30,7 @@ static void idle(unsigned int);
 int
 main(void)
 {
-	A = (struct A_pkg) { .task = DL_TASK_INIT(A_run) };
-	B = (struct B_pkg) { .task = DL_TASK_INIT(B_run) };
-	C = (struct C_pkg) { .task = DL_TASK_INIT(C_run) };
-	D = (struct D_pkg) { .task = DL_TASK_INIT(D_run) };
-	E = (struct E_pkg) { .task = DL_TASK_INIT(E_run) };
-	F = (struct F_pkg) { .task = DL_TASK_INIT(F_run) };
+	A = (struct A_pkg) { .task = dlcreate(A_run, NULL) };
 
 	int result = dlmain(&A.task, NULL, NULL);
 	if (result) perror("Error in dlmain");
@@ -46,23 +41,22 @@ static void A_run(DL_TASK_ARGS)
 {
 	DL_TASK_ENTRY(struct A_pkg, aptr, task);
 
+	F = (struct F_pkg) { .task = dlcreate(F_run, NULL) };
+	E = (struct E_pkg) { .task = dlcreate(E_run, &F.task) };
+	D = (struct D_pkg) { .task = dlcreate(D_run, &F.task) };
+	C = (struct C_pkg) { .task = dlcreate(C_run, &D.task) };
+	B = (struct B_pkg) { .task = dlcreate(B_run, &D.task) };
+
 	dlgraph_fork();
 	dlgraph_label("A task");
 
-	dlnext(&B.task, &D.task);
-	dlnext(&C.task, &D.task);
-	dlwait(&D.task, 2);
-
-	dlnext(&D.task, &F.task);
-	dlnext(&E.task, &F.task);
-	dlwait(&F.task, 2);
-
-	dlasync(&B.task);
-	dlasync(&C.task);
-
 	idle(2);
 
-	dlasync(&E.task);
+	dldetach(&B.task);
+	dldetach(&C.task);
+	dldetach(&D.task);
+	dldetach(&E.task);
+	dldetach(&F.task);
 }
 
 static void B_run(DL_TASK_ARGS)

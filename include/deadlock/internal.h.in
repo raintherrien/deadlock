@@ -31,16 +31,13 @@ struct dltask_ {
 };
 
 /*
- * When compiled without DEADLOCK_GRAPH_EXPORT DL_TASK_ENTRY() and
- * DL_TASK_INIT() are pretty basic.
+ * When compiled without DEADLOCK_GRAPH_EXPORT DL_TASK_ENTRY() is basic.
  */
 #define DL_TASK_ENTRY_VOID (void)dlt_param; (void)dlw_param;
 #define DL_TASK_ENTRY(outer_type, var, memb)                             \
 	outer_type *var = DL_TASK_DOWNCAST(dlt_param, outer_type, memb); \
 	(void) dlw_param;                                                \
 	(void) var;
-
-#define DL_TASK_INIT(fn) ((dltask){ .fn_ = fn })
 
 #else /* DEADLOCK_GRAPH_EXPORT */
 
@@ -185,11 +182,6 @@ unsigned long long dlgraph_now(void);
 	DL_TASK_ENTRY_VOID;                                              \
 	outer_type *var = DL_TASK_DOWNCAST(dlt_param, outer_type, memb); \
 	(void) var
-
-/*
- * When profiling we must assign each task a unique ID
- */
-#define DL_TASK_INIT(fn) ((dltask) { .fn_ = fn, .tid_ = dltask_next_id() })
 
 #endif /* DEADLOCK_GRAPH_EXPORT */
 

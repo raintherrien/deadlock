@@ -23,53 +23,33 @@ typedef struct dltask_ dltask;
 typedef void(*dltaskfn)(DL_TASK_ARGS);
 
 /*
- * dlasync() schedules a task to execute on the current task scheduler. Must
- * be called from a worker thread because it identifies the current task
- * scheduler from a thread local superblock.
+ * dlcreate() returns a new ready-to-run task. This task will not be invoked
+ * until released by dldetach(). Any tasks that must execute before this task
+ * must be created with dlcreate(), passing this task as the next pointer.
+ * This must be done before calling dldetach().
  *
- * dlcontinuation() should be passed the current task and marks it as
- * incomplete when this invocation completes. Instead the function associated
- * with this task is updated and any task depending on this task's completion
- * is not invoked until this task is invoked next.
- * Typically dlcontinuation is used by a subgraph which forks its own children
- * using dlasync that join back to this task using dlnext. By doing this you
- * can emulate SBRM by having a "create" and "destroy" function execute on the
- * same task object and suspend any dependent tasks set by the caller until
- * any amount of work is completed and the continuation is complete.
+ * dldetach() releases a task created by dlcreate() and marks it executable.
+ * This must be called exactly once for every task created or recaptured.
+ * This must be called *after* creating any tasks which must execute before
+ * this task, passing this task as the next pointer.
  *
- * dlnext() creates a dependency between a task and its child. This function
- * must be called in concert with dlwait() to increment the wait counter of
- * the child task. dlnext() can be called to associate a task with multiple
- * parents but a task can have only one child.
+ * dlrecapture() must be passed the currently executing task. This task is
+ * reset as if it were just created, with a new body function, but retains
+ * the same next pointer it was created with. This task must be released by
+ * calling dldetach() just like a newly created task. Before detaching, this
+ * task may be passed as the next pointer to dlcreate() to create tasks which
+ * must be executed before this task is re-executed.
  *
- * dlswap() Queues the passed task "other" for invocation immediately. Any
- * tasks waiting on "this" task are now also waiting on "other". This is an
- * alternative to dlcontinuation() "block based" recursion. This is like a
- * tail call to a different task.
- *
- * dltail() recursively invokes a task. The task passed should be the task
- * currently executing, and dltail() should only be called before immediately
- * ending the current task invocation. Conceptually, the task is re-invoked
- * before dltail() returns and thus the current task will be running at the
- * same time or might even finish after the spawned task.
- *
- * dlwait() increments the number of dependencies on a task. This should be
- * equal to the number of dlasync invocations this task is passed to.
+ * dlrecapture() may be used to create a subgraph which forks its own children
+ * using dlcreate() that join back to this task, by passing the recaptured
+ * task as the next pointer. By doing this you can emulate SBRM by having a
+ * "create" and "destroy" function execute on the same task object and
+ * suspend any dependent tasks set by the caller until any amount of work is
+ * completed and the continuation is complete.
  */
-void dlasync(dltask *task);
-void dlcontinuation(dltask *task, dltaskfn continuefn);
-void dlnext(dltask *task, dltask *next);
-void dlswap(dltask *this, dltask *other);
-void dltail(dltask *task, dltaskfn continuefn);
-void dlwait(dltask *task, unsigned wait);
-
-/*
- * DL_TASK_INIT is a function-like macro which returns an initialized dltask.
- * A task is in an undefined state unless initialized with DL_TASK_INIT.
- */
-#if 0
-#define DL_TASK_INIT(fn)
-#endif
+dltask dlcreate(dltaskfn fn, dltask *next);
+void   dldetach(dltask *task);
+void   dlrecapture(dltask *current_task, dltaskfn continuaton_fn);
 
 /*
  * DL_TASK_ENTRY downcasts the dltask arg to a typed structure and performs

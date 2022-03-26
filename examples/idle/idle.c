@@ -21,7 +21,7 @@ int
 main(void)
 {
 	start = now_ns();
-	spinner = DL_TASK_INIT(spin_run);
+	spinner = dlcreate(spin_run, NULL);
 	return dlmain(&spinner, NULL, NULL);
 }
 
@@ -38,7 +38,8 @@ spin_run(DL_TASK_ARGS)
 		return;
 	}
 
-	dltail(&spinner, spin_run);
+	dlrecapture(&spinner, spin_run);
+	dldetach(&spinner);
 }
 
 static time_ns

@@ -68,7 +68,7 @@ main(int argc, char **argv)
 		perror("Failed allocating tasks");
 		return EXIT_FAILURE;
 	}
-	master->master = DL_TASK_INIT(master_task_run);
+	master->master = dlcreate(master_task_run, NULL);
 	master->iteration = 0;
 	master->join_latency = 0;
 	master->spawn_latency = 0;
@@ -97,11 +97,10 @@ master_task_run(DL_TASK_ARGS)
 
 	if (t->iteration < ITERATIONS) {
 		++ t->iteration;
-		dlcontinuation(&t->master, master_task_run);
-		t->spawn_join = DL_TASK_INIT(spawn_task_run);
-		dlwait(&t->master, 1);
-		dlnext(&t->spawn_join, &t->master);
-		dlasync(&t->spawn_join);
+		dlrecapture(&t->master, master_task_run);
+		t->spawn_join = dlcreate(spawn_task_run, &t->master);
+		dldetach(&t->spawn_join);
+		dldetach(&t->master);
 	} else {
 		printf("Average latency of %lu tasks:\n"
 		       "\tjoin:     %lluns\n"
@@ -132,13 +131,11 @@ spawn_task_run(DL_TASK_ARGS)
 {
 	DL_TASK_ENTRY(struct master_task, t, spawn_join);
 
-	dlcontinuation(&t->spawn_join, join_task_run);
-	dlwait(&t->spawn_join, 1);
-
-	t->timing.task = DL_TASK_INIT(timed_task_run);
-	dlnext(&t->timing.task, &t->spawn_join);
+	dlrecapture(&t->spawn_join, join_task_run);
+	t->timing.task = dlcreate(timed_task_run, &t->spawn_join);
 	t->timing.scheduled = now_ns();
-	dlasync(&t->timing.task);
+	dldetach(&t->timing.task);
+	dldetach(&t->spawn_join);
 }
 
 static void

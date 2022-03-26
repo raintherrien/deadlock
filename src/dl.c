@@ -7,27 +7,49 @@
 #include <errno.h>
 #include <stdlib.h>
 
-void
-dlasync(dltask *task)
+dltask
+dlcreate(dltaskfn fn, dltask *next)
 {
-	assert(dl_this_worker);
-	assert(task);
-	struct dlworker *w = dl_this_worker;
+	if (next) {
+		atomic_fetch_add(&next->wait_, 1);
+	}
+
+	return (dltask) {
+		.next_ = next,
+		.fn_ = fn,
+		.wait_ = 1,
 #ifdef DEADLOCK_GRAPH_EXPORT
-	dlworker_add_edge_from_current(w, task);
+		.tid_ = dltask_next_id()
 #endif
-	dlworker_async(w, task);
+	};
 }
 
 void
-dlcontinuation(dltask *task, dltaskfn continuefn)
+dldetach(dltask *task)
+{
+	assert(task);
+
+	unsigned w = atomic_fetch_sub(&task->wait_, 1);
+	assert(w > 0);
+	if (w == 1) {
+		assert(dl_this_worker);
+		struct dlworker *w = dl_this_worker;
+#ifdef DEADLOCK_GRAPH_EXPORT
+		dlworker_add_edge_from_current(w, task);
+#endif
+		dlworker_async(w, task);
+	}
+}
+
+void
+dlrecapture(dltask *task, dltaskfn continuefn)
 {
 	assert(dl_this_worker);
 	assert(task);
+	atomic_fetch_add(&task->wait_, 1);
 	task->fn_ = continuefn;
 	if (task->next_) {
-		atomic_fetch_add_explicit(&task->next_->wait_, 1,
-		                          memory_order_relaxed);
+		atomic_fetch_add(&task->next_->wait_, 1);
 	}
 
 #ifdef DEADLOCK_GRAPH_EXPORT
@@ -49,6 +71,9 @@ int
 dlmainex(dltask *task, dlwentryfn entry, dlwexitfn exit, int workers)
 {
 	assert(task);
+
+	unsigned w = atomic_fetch_sub(&task->wait_, 1);
+	assert(w == 1);
 
 	int result = 0;
 
@@ -75,57 +100,10 @@ malloc_failed:
 }
 
 void
-dlnext(dltask *task, dltask *next)
-{
-	assert(task);
-	task->next_ = next;
-}
-
-void
-dlswap(dltask *this, dltask *other)
-{
-	assert(dl_this_worker);
-	assert(this && other);
-
-	if (this->next_) {
-		atomic_fetch_add_explicit(&this->next_->wait_, 1,
-		                          memory_order_relaxed);
-		dlnext(other, this->next_);
-	}
-
-	dlworker_async(dl_this_worker, other);
-}
-
-void
-dltail(dltask *task, dltaskfn continuefn)
-{
-	assert(dl_this_worker);
-	assert(task);
-	task->fn_ = continuefn;
-	if (task->next_) {
-		atomic_fetch_add_explicit(&task->next_->wait_, 1,
-		                          memory_order_relaxed);
-	}
-
-	struct dlworker *w = dl_this_worker;
-#ifdef DEADLOCK_GRAPH_EXPORT
-	dlworker_add_continuation_from_current(w, task);
-#endif
-	dlworker_async(w, task);
-}
-
-void
 dlterminate(void)
 {
 	assert(dl_this_worker);
 	dlsched_terminate(dl_this_worker->sched);
-}
-
-void
-dlwait(dltask *task, unsigned wait)
-{
-	assert(task);
-	atomic_fetch_add_explicit(&task->wait_, wait, memory_order_relaxed);
 }
 
 int
